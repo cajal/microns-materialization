@@ -8,17 +8,12 @@ import pandas as pd
 import traceback
 import sys
 from pathlib import Path
-from geoalchemy2.shape import to_shape, WKBElement
-
+import time
 
 if 'ipykernel' in sys.modules:
     from tqdm import tqdm_notebook as tqdm
 else:
     from tqdm import tqdm
-
-# Package References
-from . import utils
-import time
 
 # Schema creation
 schema = dj.schema('microns_minnie65_materialization', create_tables=True)
