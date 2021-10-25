@@ -6,9 +6,9 @@ from os import path
 here = path.abspath(path.dirname(__file__))
 
 setup(
-    name='minnie_materialization',
+    name='microns_materialization',
     version='0.0.1',
-    description='Datajoint schemas and related methods for minnie materialization',
+    description='Datajoint schemas for the MICrONS project',
     author='Stelios Papadopoulos',
     author_email='spapadop@bcm.edu',
     packages=find_packages(exclude=[]),
