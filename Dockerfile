@@ -1,7 +1,12 @@
 FROM ninai/microns-base 
 LABEL maintainer="Stelios Papadopoulos <spapadop@bcm.edu>"
 
-RUN pip3 install meshparty cloud-volume analysisdatalink
+RUN pip3 install \
+        meshparty \
+        cloud-volume \
+        analysisdatalink\
+        caveclient \
+        nglui
 
 WORKDIR /root
 ARG CLOUDVOLUME_TOKEN
