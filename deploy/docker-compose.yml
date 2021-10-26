@@ -1,0 +1,27 @@
+version: '3.4'
+x-build: &build
+  context: ../
+  dockerfile: Dockerfile
+  
+x-shared: &common
+  ipc: host
+  build:
+    context: ../
+    dockerfile: Dockerfile
+    args: 
+      - CLOUDVOLUME_TOKEN=${CLOUDVOLUME_TOKEN:-}
+  volumes:
+    - ../:/src/microns-materialization
+    - /mnt:/mnt
+  env_file:
+    - .env
+
+services:
+  notebook:
+    <<: *common
+    ports:
+        - "${JUPYTER_HOST:-0.0.0.0}:${JUPYTER_PORT_CONTAINER:-8888}:8888"
+    entrypoint: /src/microns-materialization/deploy/notebook.sh
+  bin:
+    <<: *common
+    entrypoint: /bin/bash

@@ -4,6 +4,7 @@ LABEL maintainer="Stelios Papadopoulos <spapadop@bcm.edu>"
 RUN pip3 install meshparty cloud-volume analysisdatalink
 
 WORKDIR /root
+ARG CLOUDVOLUME_TOKEN
 RUN mkdir -p .cloudvolume/secrets
 RUN echo "{\"token\": \"${CLOUDVOLUME_TOKEN:-}\"}" > .cloudvolume/secrets/cave-secret.json
 
