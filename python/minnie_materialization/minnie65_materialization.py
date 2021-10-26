@@ -381,7 +381,7 @@ class Synapse(dj.Computed):
         
         client = CAVEclient('minnie65_phase3_v1')
         
-        if ver is 'latest':
+        if ver == 'latest':
             ver = client.materialize.most_recent_version()
             print(f'Latest version specified.')
         
