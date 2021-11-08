@@ -23,8 +23,7 @@ config.register_adapters(schema_name)
 config.register_externals(schema_name)
 
 # Schema creation
-schema = dj.schema(schema_name, create_tables=True)
-schema.spawn_missing_classes()
+schema = dj.schema(schema_name)
 
 @schema
 class Materialization(dj.Manual):
