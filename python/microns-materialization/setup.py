@@ -22,5 +22,5 @@ setup(
     author='Stelios Papadopoulos',
     author_email='spapadop@bcm.edu',
     packages=find_packages(exclude=[]),
-    install_requires=['numpy', 'pandas', 'scipy', 'decorator', 'matplotlib', 'caveclient', 'nglui', 'tqdm',config_package]
+    install_requires=['numpy', 'pandas', 'scipy', 'decorator', 'matplotlib', 'caveclient', 'nglui', 'tqdm', config_package]
 )
