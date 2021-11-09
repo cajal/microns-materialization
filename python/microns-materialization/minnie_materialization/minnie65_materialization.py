@@ -19,11 +19,12 @@ else:
 import microns_materialization_config as config
 schema_name = 'microns_minnie65_materialization'
 
-config.register_adapters(schema_name)
+config.register_adapters(schema_name, context=locals())
 config.register_externals(schema_name)
 
 # Schema creation
 schema = dj.schema(schema_name)
+# schema.spawn_missing_classes()
 
 @schema
 class Materialization(dj.Manual):

@@ -15,4 +15,4 @@ RUN echo "{\"token\": \"${CLOUDVOLUME_TOKEN:-}\"}" > .cloudvolume/secrets/cave-s
 
 WORKDIR /src
 COPY . /src/microns-materialization
-RUN pip3 install -e /src/microns-materialization/python
+RUN pip3 install -e /src/microns-materialization/python/microns-materialization

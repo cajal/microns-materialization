@@ -29,8 +29,7 @@ def register_externals(schema_name:str):
 def register_adapters(schema_name:str, context=None):
     """
     Imports the adapters for a schema_name into the global namespace.
-    """
-    #return config_utils.register_adapters(adapters_mapping[schema_name], context=context)
+    """     
     return config_utils.register_adapters(config_mapping[SCHEMAS(schema_name)]["adapters"], context=context)
 
 
