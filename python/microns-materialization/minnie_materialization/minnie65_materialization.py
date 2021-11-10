@@ -16,7 +16,7 @@ else:
     from tqdm import tqdm
 
 # Schema creation
-import microns_materialization_config as config
+from microns_materialization_api import config
 schema_name = 'microns_minnie65_materialization'
 
 config.register_adapters(schema_name, context=locals())
