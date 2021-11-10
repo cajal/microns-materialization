@@ -8,9 +8,9 @@ with open(path.join(here, '..', 'version.py')) as f:
     exec(f.read())
 
 setup(
-    name="microns-materialization-config",
+    name="microns-materialization-api",
     version=__version__,
-    description="configuration for microns-materialization",
+    description="api for microns-materialization",
     author="Stelios Papadopoulos, Brendan Celii, Christos Papadopoulos",
     packages=find_packages()
 )
