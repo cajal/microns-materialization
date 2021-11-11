@@ -1,4 +1,5 @@
 import datajoint as dj
+from datajoint import datajoint_plus as djp
 from caveclient import CAVEclient
 
 
@@ -17,13 +18,13 @@ else:
 
 # Schema creation
 from microns_materialization_api import config
-schema_name = 'microns_minnie65_materialization'
+schema_obj = config.SCHEMAS.MINNIE65_MATERIALIZATION
 
-config.register_adapters(schema_name, context=locals())
-config.register_externals(schema_name)
+config.register_adapters(schema_obj, context=locals())
+config.register_externals(schema_obj)
 
 # Schema creation
-schema = dj.schema(schema_name)
+schema = dj.schema(schema_obj.value)
 # schema.spawn_missing_classes()
 
 @schema
