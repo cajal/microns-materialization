@@ -1,4 +1,5 @@
 import datajoint as dj
+from datajoint import datajoint_plus as djp
 import cloudvolume
 
 import numpy as np
@@ -15,11 +16,12 @@ if 'ipykernel' in sys.modules:
 else:
     from tqdm import tqdm
 
-import microns_materialization_config as config
-schema_name = 'microns_h01_materialization'
+from microns_materialization_api import config
+schema_obj = config.SCHEMAS.H01_MATERIALIZATION
 
-config.register_adapters(schema_name)
-config.register_externals(schema_name)
+config.register_adapters(schema_obj, context=locals())
+config.register_externals(schema_obj)
 
 # Schema creation
-schema = dj.schema(schema_name)
+schema = dj.schema(schema_obj.value)
+schema.spawn_missing_classes()

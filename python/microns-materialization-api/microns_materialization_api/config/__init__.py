@@ -29,8 +29,7 @@ def register_externals(schema_name:str):
 def register_adapters(schema_name:str, context=None):
     """
     Imports the adapters for a schema_name into the global namespace.
-    """
-    #return config_utils.register_adapters(adapters_mapping[schema_name], context=context)
+    """     
     return config_utils.register_adapters(config_mapping[SCHEMAS(schema_name)]["adapters"], context=context)
 
 
@@ -39,9 +38,7 @@ def create_vm(schema_name:str):
     Creates a virtual module after registering the external stores, and includes the adapter objects in the vm.
     """
     schema = SCHEMAS(schema_name)
-    return config_utils.create_vm(schema.value, 
-                                  external_stores=config_mapping[schema]["externals"],
-                                  adapter_objects=config_mapping[schema]["adapters"])
+    return config_utils.create_vm(schema.value, external_stores=config_mapping[schema]["externals"], adapter_objects=config_mapping[schema]["adapters"])
 
 
 class SCHEMAS(Enum):
