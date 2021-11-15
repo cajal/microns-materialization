@@ -9,7 +9,7 @@ x-shared: &common
     context: ../
     dockerfile: Dockerfile
     args: 
-      - CLOUDVOLUME_TOKEN=${CLOUDVOLUME_TOKEN:-}
+      - CLOUDVOLUME_TOKEN=${CLOUDVOLUME_TOKEN}
   volumes:
     - ../:/src/microns-materialization
     - /mnt:/mnt
