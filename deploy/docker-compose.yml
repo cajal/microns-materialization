@@ -9,7 +9,7 @@ x-shared: &common
     context: ../
     dockerfile: Dockerfile
     args: 
-      - CLOUDVOLUME_TOKEN=${CLOUDVOLUME_TOKEN:-}
+      - CLOUDVOLUME_TOKEN=${CLOUDVOLUME_TOKEN}
   volumes:
     - ../:/src/microns-materialization
     - /mnt:/mnt
@@ -22,6 +22,7 @@ services:
     ports:
         - "${JUPYTER_HOST:-0.0.0.0}:${JUPYTER_PORT_CONTAINER:-8888}:8888"
     entrypoint: /src/microns-materialization/deploy/notebook.sh
+    working_dir: /src
   bin:
     <<: *common
     entrypoint: /bin/bash

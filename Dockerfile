@@ -13,6 +13,6 @@ ARG CLOUDVOLUME_TOKEN
 RUN mkdir -p .cloudvolume/secrets
 RUN echo "{\"token\": \"${CLOUDVOLUME_TOKEN:-}\"}" > .cloudvolume/secrets/cave-secret.json
 
-WORKDIR /src
 COPY . /src/microns-materialization
 RUN pip3 install -e /src/microns-materialization/python/microns-materialization
+RUN pip3 install -e /src/microns-materialization/python/microns-materialization-api
