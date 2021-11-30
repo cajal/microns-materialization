@@ -1,3 +1,7 @@
+"""
+Adapters for DataJoint tables.
+"""
+
 import datajoint as dj
 import numpy as np
 import h5py

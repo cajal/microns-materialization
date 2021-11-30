@@ -1,0 +1,4 @@
+from microns_materialization_api import config
+from . import minnie65_materialization
+
+config.register_bases(config.SCHEMAS.MINNIE65_MATERIALIZATION, minnie65_materialization)

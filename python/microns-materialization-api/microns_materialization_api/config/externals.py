@@ -1,3 +1,7 @@
+"""
+Externals for DataJoint tables.
+"""
+
 from pathlib import Path
 from microns_utils import config_utils
 
