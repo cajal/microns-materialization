@@ -25,7 +25,8 @@ config.register_externals(schema_obj)
 
 # Schema creation
 schema = dj.schema(schema_obj.value)
-# schema.spawn_missing_classes()
+schema.spawn_missing_classes()
+schema.connection.dependencies.load()
 
 @schema
 class Materialization(dj.Manual):
