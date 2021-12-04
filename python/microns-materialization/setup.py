@@ -16,7 +16,7 @@ api = find_api('microns-materialization-api')
 
 setup(
     name='microns_materialization',
-    version='0.0.1',
+    version=__version__,
     description='Datajoint schemas for importing external data for the MICrONS project',
     author='Stelios Papadopoulos',
     author_email='spapadop@bcm.edu',
