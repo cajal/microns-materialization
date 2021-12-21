@@ -251,3 +251,7 @@ class AllenSomaCourseCellClassModelV2(dj.Manual):
         description=NULL                  : varchar(256)      # description of the table version
         ts_inserted=CURRENT_TIMESTAMP     : timestamp         # timestamp that data was inserted into this DataJoint table.
         """ 
+
+
+schema.spawn_missing_classes()
+schema.connection.dependencies.load()
