@@ -1,4 +1,4 @@
-from microns_materialization_api import config
+import datajoint.datajoint_plus as djp
 from . import h01_materialization
 
-config.register_bases(config.SCHEMAS.H01_MATERIALIZATION, h01_materialization)
+djp.reassign_master_attribute(h01_materialization)

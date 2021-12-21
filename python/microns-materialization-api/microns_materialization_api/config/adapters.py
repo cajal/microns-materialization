@@ -46,10 +46,10 @@ minnie65_meshes = MeshAdapter('filepath@minnie65_meshes')
 
 # also store in one object for ease of use with virtual modules
 
-h01_materialization_adapter_objects = {
+h01_materialization = {
     'h01_meshes': h01_meshes,
 }
 
-minnie65_materialization_adapter_objects = {
+minnie65_materialization = {
     'minnie65_meshes': minnie65_meshes,
 }
