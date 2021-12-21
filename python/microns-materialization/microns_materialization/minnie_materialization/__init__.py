@@ -1,4 +1,4 @@
-from microns_materialization_api import config
+import datajoint.datajoint_plus as djp
 from . import minnie65_materialization
 
-config.register_bases(config.SCHEMAS.MINNIE65_MATERIALIZATION, minnie65_materialization)
+djp.reassign_master_attribute(minnie65_materialization)
