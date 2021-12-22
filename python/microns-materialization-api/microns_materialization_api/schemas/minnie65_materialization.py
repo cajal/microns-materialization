@@ -4,12 +4,12 @@ DataJoint tables for importing minnie65 from CAVE.
 import datajoint as dj
 import datajoint.datajoint_plus as djp
 
-from ..config import minnie65_materialization_config
+from ..config import minnie65_materialization_config as config
 
-minnie65_materialization_config.register_externals()
-minnie65_materialization_config.register_adapters(context=locals())
+config.register_externals()
+config.register_adapters(context=locals())
 
-schema = dj.schema(minnie65_materialization_config.schema_name, create_schema=True)
+schema = dj.schema(config.schema_name, create_schema=True)
 
 @schema
 class Materialization(djp.Manual):
@@ -78,7 +78,7 @@ class Nucleus(djp.Manual):
 
 
 @schema
-class FunctionalCoreg(dj.Manual):
+class FunctionalCoreg(djp.Manual):
     definition = """
     # ID's of cells from the table 'functional_coreg'
     ->Materialization
@@ -94,7 +94,7 @@ class FunctionalCoreg(dj.Manual):
     supervoxel_id    : bigint unsigned    # id of the supervoxel under the nucleus centroid. Equivalent to Allen: 'pt_supervoxel_id'.
     """
         
-    class Meta(dj.Part):
+    class Meta(djp.Part):
         definition = """
         ->Materialization
         ---
@@ -104,14 +104,14 @@ class FunctionalCoreg(dj.Manual):
 
 
 @schema
-class ProofreadSegment(dj.Manual):
+class ProofreadSegment(djp.Manual):
     definition = """
     # Segment ID's of manually proofread neurons from 'proofreading_functional_coreg_v2'
     ->Materialization
     segment_id       : bigint unsigned    # id of the segment under the nucleus centroid. Equivalent to Allen 'pt_root_id'.
     """
 
-    class Meta(dj.Part):
+    class Meta(djp.Part):
         definition = """
         ->Materialization
         ---
@@ -121,7 +121,7 @@ class ProofreadSegment(dj.Manual):
 
 
 @schema
-class ProofreadFunctionalCoregV2(dj.Manual):
+class ProofreadFunctionalCoregV2(djp.Manual):
     definition = """
     # ID's of cells from the table 'proofreading_functional_coreg_v2'
     ->Materialization
@@ -137,7 +137,7 @@ class ProofreadFunctionalCoregV2(dj.Manual):
     supervoxel_id    : bigint unsigned    # id of the supervoxel under the nucleus centroid. Equivalent to Allen: 'pt_supervoxel_id'.
     """
         
-    class Meta(dj.Part):
+    class Meta(djp.Part):
         definition = """
         ->Materialization
         ---
@@ -147,7 +147,7 @@ class ProofreadFunctionalCoregV2(dj.Manual):
 
 
 @schema
-class SynapseSegmentSource(dj.Manual):
+class SynapseSegmentSource(djp.Manual):
     definition = """
     segment_id           : bigint unsigned              # id of the segment under the nucleus centroid. Equivalent to Allen 'pt_root_id'.
     ---
@@ -156,7 +156,7 @@ class SynapseSegmentSource(dj.Manual):
 
 
 @schema
-class Synapse(dj.Computed):
+class Synapse(djp.Computed):
     definition = """
     # Synapses from the table 'synapses_pni_2'
     ->SynapseSegmentSource.proj(primary_seg_id='segment_id')
@@ -173,7 +173,7 @@ class Synapse(dj.Computed):
 
 
 @schema
-class AllenV1ColumnTypesSlanted(dj.Manual):
+class AllenV1ColumnTypesSlanted(djp.Manual):
     definition = """
     # ID's of cells from the table 'allen_v1_column_types_slanted'
     ->Materialization
@@ -190,7 +190,7 @@ class AllenV1ColumnTypesSlanted(dj.Manual):
     supervoxel_id             : bigint unsigned    # id of the supervoxel under the nucleus centroid. Equivalent to Allen: 'pt_supervoxel_id'.
     """
         
-    class Meta(dj.Part):
+    class Meta(djp.Part):
         definition = """
         ->Materialization
         ---
@@ -200,7 +200,7 @@ class AllenV1ColumnTypesSlanted(dj.Manual):
 
 
 @schema
-class AllenSomaCourseCellClassModelV1(dj.Manual):
+class AllenSomaCourseCellClassModelV1(djp.Manual):
     definition = """
     # ID's of cells from the table 'allen_soma_coarse_cell_class_model_v1'
     ->Materialization
@@ -217,7 +217,7 @@ class AllenSomaCourseCellClassModelV1(dj.Manual):
     supervoxel_id             : bigint unsigned    # id of the supervoxel under the nucleus centroid. Equivalent to Allen: 'pt_supervoxel_id'.
     """
         
-    class Meta(dj.Part):
+    class Meta(djp.Part):
         definition = """
         ->Materialization
         ---
@@ -227,7 +227,7 @@ class AllenSomaCourseCellClassModelV1(dj.Manual):
 
 
 @schema
-class AllenSomaCourseCellClassModelV2(dj.Manual):
+class AllenSomaCourseCellClassModelV2(djp.Manual):
     definition = """
     # ID's of cells from the table 'allen_soma_coarse_cell_class_model_v2'
     ->Materialization
@@ -244,7 +244,7 @@ class AllenSomaCourseCellClassModelV2(dj.Manual):
     supervoxel_id             : bigint unsigned    # id of the supervoxel under the nucleus centroid. Equivalent to Allen: 'pt_supervoxel_id'.
     """
         
-    class Meta(dj.Part):
+    class Meta(djp.Part):
         definition = """
         ->Materialization
         ---
