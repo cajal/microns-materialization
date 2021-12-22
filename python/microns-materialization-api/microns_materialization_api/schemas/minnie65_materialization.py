@@ -4,12 +4,12 @@ DataJoint tables for importing minnie65 from CAVE.
 import datajoint as dj
 import datajoint.datajoint_plus as djp
 
-from ..config import minnie65_materialization_config
+from ..config import minnie65_materialization_config as config
 
-minnie65_materialization_config.register_externals()
-minnie65_materialization_config.register_adapters(context=locals())
+config.register_externals()
+config.register_adapters(context=locals())
 
-schema = dj.schema(minnie65_materialization_config.schema_name, create_schema=True)
+schema = dj.schema(config.schema_name, create_schema=True)
 
 @schema
 class Materialization(djp.Manual):
