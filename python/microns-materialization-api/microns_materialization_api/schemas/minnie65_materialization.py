@@ -454,50 +454,38 @@ class Queue(djp.Lookup):
     ---
     ts_inserted=CURRENT_TIMESTAMP : timestamp
     """
-    
-    class Materialization(djp.Part):
-        enable_hashing = True
-        hash_name = 'queue_id'
-        hashed_attrs = 'ver'
-        hash_group = True
-        definition = """
-        ver    : int     # materialization version
-        -> master
-        """
-        
-        @classmethod
-        def add_entry(cls, ver):
-            cls.insert1({'ver': ver}, insert_to_master=True)
 
     class PCGSkeleton(djp.Part):
         enable_hashing = True
         hash_name = 'queue_id'
-        hashed_attrs = 'segment_id'
+        hashed_attrs = 'segment_id', 'import_method'
         hash_group = True
         
         definition = """
-        segment_id           : bigint unsigned              # id of the segment under the nucleus centroid. 
+        -> Segment
+        -> ImportMethod
         -> master
         """
         
         @classmethod
-        def add_entry(cls, table):
-            cls.insert(table, insert_to_master=True, ignore_extra_fields=True)
-            
+        def add_rows(cls, rows):
+            cls.insert(rows, insert_to_master=True, ignore_extra_fields=True)
+    
     class PCGMeshwork(djp.Part):
         enable_hashing = True
         hash_name = 'queue_id'
-        hashed_attrs = 'segment_id'
+        hashed_attrs = 'segment_id', 'import_method'
         hash_group = True
         
         definition = """
-        segment_id           : bigint unsigned              # id of the segment under the nucleus centroid. 
+        -> Segment
+        -> ImportMethod
         -> master
         """
         
         @classmethod
-        def add_entry(cls, table):
-            cls.insert(table, insert_to_master=True, ignore_extra_fields=True)
+        def add_rows(cls, rows):
+            cls.insert(rows, insert_to_master=True, ignore_extra_fields=True)
 
 schema.spawn_missing_classes()
 schema.connection.dependencies.load()

@@ -665,8 +665,6 @@ class Skeleton(m65mat.Skeleton):
 
 class Queue(m65mat.Queue):
 
-    class Materialization(m65mat.Queue.Materialization): pass
-
     class PCGMeshwork(m65mat.Queue.PCGMeshwork): pass
     
     class PCGSkeleton(m65mat.Queue.PCGSkeleton): pass
