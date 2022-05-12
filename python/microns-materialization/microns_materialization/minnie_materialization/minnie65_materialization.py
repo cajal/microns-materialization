@@ -1,502 +1,771 @@
-import datajoint as dj
-from datajoint import datajoint_plus as djp
-from caveclient import CAVEclient
-
-
-import numpy as np
-import datetime
-import pandas as pd
-import traceback
+import inspect
+import json
 import sys
+from datetime import datetime
 from pathlib import Path
-import time
 
-if 'ipykernel' in sys.modules:
-    from tqdm import tqdm_notebook as tqdm
-else:
-    from tqdm import tqdm
+import datajoint as dj
+import datajoint_plus as djp
+import numpy as np
+import pandas as pd
+import pcg_skel
+from meshparty import trimesh_io
 
 # Schema creation
-from microns_materialization_api.schemas import minnie65_materialization as m65mat
+from microns_materialization_api.schemas import \
+    minnie65_materialization as m65mat
+
+schema = m65mat.schema
+config = m65mat.config
+
+logger = djp.getLogger(__name__)
+
+# Utils
+from microns_utils.adapter_utils import adapt_mesh_hdf5
+from microns_utils.ap_utils import set_CAVE_client
+from microns_utils.filepath_utils import (append_timestamp_to_filepath,
+                                          get_file_modification_time)
+from microns_utils.misc_utils import wrap
+from microns_utils.version_utils import \
+    check_package_version_from_distributions as cpvfd
+
+# TODO: Deal with filter out unrestricted
+
+class ImportMethod(m65mat.ImportMethod):
+    @classmethod
+    def run(cls, key):
+        return cls.r1p(key).run(**key)
+
+    @classmethod
+    def validate_method(cls, names, method_values, current_values):
+        results = []
+        for name, mv, cv in zip(wrap(names), wrap(method_values), wrap(current_values)):
+            if mv != cv:
+                cls.Log('error', f"This method requires {name} to be {mv}, but currently is {cv}. Create a new method.")
+                results.append(0)
+            else:
+                results.append(1)
+        assert np.all(results), 'Method compatibility validation failed. Check logs.'
+
+    class MaterializationVer(m65mat.ImportMethod.MaterializationVer):
+        @classmethod
+        def update_method(cls, ver=None, **kwargs):
+            cls.Log('info', f'Updating method for {cls.class_name}.')
+            
+            # DEFAULTS
+            datastack = 'minnie65_phase3_v1'
+            
+            # INSERT
+            client = set_CAVE_client(datastack, ver)
+            cls.insert1({
+                'caveclient_version': cpvfd('caveclient'),
+                'datastack': datastack,
+                'ver': ver if ver is not None else client.materialize.version,
+            }, ignore_extra_fields=True, insert_to_master=True, skip_duplicates=True)
+        
+        def run(self, **kwargs):
+            params = (self & kwargs).fetch1()
+            self.Log('info', f'Running {self.class_name} with params {params}.')
+
+            # INITIALIZE & VALIDATE
+            client = set_CAVE_client(params['datastack'], ver=params['ver'])
+            self.master.validate_method(
+                names=('caveclient version', 'datastack', 'materialization_version'),
+                method_values=(params['caveclient_version'], params['datastack'], params['ver']),
+                current_values=(cpvfd('caveclient'), client.materialize.datastack_name, client.materialize.version)
+            )
+
+            # IMPORT DATA
+            data = client.materialize.get_version_metadata()
+            data.update({'ver': data['version']})
+            return data
+    
+    class NucleusSegment(m65mat.ImportMethod.NucleusSegment):
+        @classmethod
+        def update_method(cls, ver=None, **kwargs):
+            cls.Log('info', f'Updating method for {cls.class_name}.')
+
+            # DEFAULTS
+            datastack = 'minnie65_phase3_v1'
+
+            # INSERT
+            client = set_CAVE_client(datastack, ver)
+            cls.insert1({
+                'caveclient_version': cpvfd('caveclient'),
+                'datastack': datastack,
+                'ver': ver if ver is not None else client.materialize.version,
+            }, ignore_extra_fields=True, skip_duplicates=True, insert_to_master=True)
+
+        def run(self, **kwargs):
+            params = (self & kwargs).fetch1()
+            self.Log('info', f'Running {self.class_name} with params {params}.')
+            
+            # INITIALIZE & VALIDATE
+            client = set_CAVE_client(params['datastack'], ver=params['ver'])
+            self.master.validate_method(
+                names=('caveclient version', 'datastack', 'materialization_version'),
+                method_values=(params['caveclient_version'], params['datastack'], params['ver']),
+                current_values=(cpvfd('caveclient'), client.materialize.datastack_name, client.materialize.version)
+            )
+
+            # IMPORT DATA
+            df = client.materialize.query_table('nucleus_detection_v0')
+            rename_dict = {
+                'id': 'nucleus_id',
+                'pt_root_id': 'segment_id',
+                'pt_supervoxel_id': 'supervoxel_id'
+            }
+            df = df.rename(columns=rename_dict)
+            df['ver'] = params['ver']
+            df['nucleus_x'], df['nucleus_y'], df['nucleus_z'] = np.stack(df.pt_position.values).T
+            df['import_method'] = params['import_method']
+            return {'df': df}
+    
+    class MeshPartyMesh(m65mat.ImportMethod.MeshPartyMesh):
+        @classmethod
+        def update_method(cls, *args, **kwargs):
+            msg = f'{cls.class_name} has been deprecated. Use {cls.master.class_name}.MeshPartyMesh2.'
+            cls.Log('error', msg)
+            raise Exception(msg)
+
+        def run(self, *args, **kwargs):
+            msg = f'{self.class_name} has been deprecated. Use {self.master.class_name}.MeshPartyMesh2.'
+            self.Log('error', msg)
+            raise Exception(msg)
+
+    class MeshPartyMesh2(m65mat.ImportMethod.MeshPartyMesh2):
+        @classmethod
+        def update_method(cls, ver=None, download_meshes_kwargs={}, **kwargs):
+            cls.Log('info', f'Updating method for {cls.class_name}.')
+            
+            # DEFAULTS
+            datastack = 'minnie65_phase3_v1'           
+            download_meshes_kwargs.setdefault('overwrite', False)
+            download_meshes_kwargs.setdefault('n_threads', 10)
+            download_meshes_kwargs.setdefault('verbose', False)
+            download_meshes_kwargs.setdefault('stitch_mesh_chunks', True)
+            download_meshes_kwargs.setdefault('merge_large_components', False)
+            download_meshes_kwargs.setdefault('remove_duplicate_vertices', True)
+            download_meshes_kwargs.setdefault('map_gs_to_https', True)
+            download_meshes_kwargs.setdefault('fmt', "hdf5")
+            download_meshes_kwargs.setdefault('save_draco', False)
+            download_meshes_kwargs.setdefault('chunk_size', None)
+            download_meshes_kwargs.setdefault('progress', False)
+
+            # INSERT
+            client = set_CAVE_client(datastack, ver)
+            cls.insert1(
+                {
+                    'description' : '',
+                    'meshparty_version': cpvfd('meshparty'),
+                    'cloudvolume_version': cpvfd('cloud-volume'),
+                    'caveclient_version': cpvfd('caveclient'),
+                    'datastack': datastack,
+                    'ver': ver if ver is not None else client.materialize.version,
+                    'cloudvolume_path': client.info.segmentation_source(),
+                    'download_meshes_kwargs': json.dumps(download_meshes_kwargs),
+                    'target_dir': m65mat.config.externals['minnie65_meshes']['location'],
+                    
+                },
+                insert_to_master=True, 
+                skip_duplicates=True, 
+            )
+
+        def run(self, **kwargs):
+            params = (self & kwargs).fetch1()
+            self.Log('info', f'Running {self.class_name} with params {params}.')
+
+            # INITIALIZE & VALIDATE
+            client = set_CAVE_client(params['datastack'], params['ver'])
+            packages = {
+                'meshparty_version': 'meshparty',
+                'caveclient_version': 'caveclient',
+                'cloudvolume_version': 'cloud-volume'
+            }
+            self.master.validate_method(
+                names=list(packages.keys()) + ['cloudvolume_path', 'datastack', 'materialization_version'],
+                method_values=[params[k] for k in packages.keys()] + [params['cloudvolume_path'], params['datastack'], params['ver']],
+                current_values=[cpvfd(v) for v in packages.values()] + [client.info.segmentation_source(), client.materialize.datastack_name, client.materialize.version]
+            )
+
+            # IMPORT DATA
+            segment_id = kwargs['segment_id']
+            target_dir = params['target_dir']
+
+            trimesh_io.download_meshes(seg_ids=wrap(segment_id), target_dir=target_dir, cv_path=params['cloudvolume_path'], **json.loads(params['download_meshes_kwargs']))
+
+            # make file path
+            filepath = Path(target_dir).joinpath(str(segment_id)).with_suffix('.h5')
+
+            # append timestamp to filepath 
+            ts_computed = get_file_modification_time(filepath, timezone='US/Central', fmt="%Y-%m-%d_%H:%M:%S")
+            filepath = append_timestamp_to_filepath(filepath, ts_computed, return_filepath=True)
+            
+            # get mesh data
+            n_vertices, n_faces, info_dict = adapt_mesh_hdf5(filepath=filepath, parse_filepath_stem=True, filepath_has_timestamp=True, separator='__', as_lengths=True)
+            assert kwargs['segment_id'] == info_dict['segment_id'], 'segment_id in filepath does not match provided segment_id.' # sanity check
+            
+            info_dict['ts_computed'] = str(info_dict.pop('timestamp'))
+            info_dict['mesh'] = info_dict.pop('filepath')
+
+            return {'n_vertices': n_vertices, 'n_faces': n_faces, **info_dict}
+    
+    class Synapse(m65mat.ImportMethod.Synapse):
+        @classmethod
+        def update_method(cls, *args, **kwargs):
+            msg = f'{cls.class_name} has been deprecated. Use {cls.master.class_name}.Synapse2.'
+            cls.Log('error', msg)
+            raise Exception(msg)
+
+        def run(self, *args, **kwargs):
+            msg = f'{self.class_name} has been deprecated. Use {self.master.class_name}.Synapse2.'
+            self.Log('error', msg)
+            raise Exception(msg)
+    
+    class Synapse2(m65mat.ImportMethod.Synapse2):
+        @classmethod
+        def update_method(cls, ver=None, **kwargs):
+            cls.Log('info', f'Updating method for {cls.class_name}.')
+
+            # DEFAULTS            
+            datastack = 'minnie65_phase3_v1'
+
+            # INSERT
+            client = set_CAVE_client(datastack, ver)
+            cls.insert1({
+                'caveclient_version': cpvfd('caveclient'),
+                'datastack': datastack,
+                'ver': ver if ver is not None else client.materialize.version,
+            }, ignore_extra_fields=True, skip_duplicates=True, insert_to_master=True)
+
+        def run(self, **kwargs):
+            params = (self & kwargs).fetch1()
+            self.Log('info', f'Running {self.class_name} with params {params}.')
+            
+            # INITIALIZE & VALIDATE
+            client = set_CAVE_client(params['datastack'], ver=params['ver'])
+            self.master.validate_method(
+                names=('caveclient version', 'datastack', 'materialization_version'),
+                method_values=(params['caveclient_version'], params['datastack'], params['ver']),
+                current_values=(cpvfd('caveclient'), client.materialize.datastack_name, client.materialize.version)
+            )
+
+            # IMPORT DATA
+            primary_seg_id = int(kwargs['primary_seg_id'])
+
+            # get synapses where primary segment is presynaptic
+            df_pre = client.materialize.query_table('synapses_pni_2', filter_equal_dict={'pre_pt_root_id': primary_seg_id})
+            df_pre = df_pre.rename(columns={'pre_pt_root_id':'primary_seg_id', 'post_pt_root_id': 'secondary_seg_id'})
+            df_pre['prepost'] = 'presyn'
+            
+            # get synapses where primary segment is postsynaptic
+            df_post = client.materialize.query_table('synapses_pni_2', filter_equal_dict={'post_pt_root_id': primary_seg_id})
+            df_post = df_post.rename(columns={'post_pt_root_id':'primary_seg_id', 'pre_pt_root_id': 'secondary_seg_id'})
+            df_post['prepost'] = 'postsyn'
+            
+            # combine dataframes
+            df = pd.concat([df_pre, df_post], axis=0)
+            
+            # remove autapses (these are mostly errors)
+            df = df[df['primary_seg_id']!=df['secondary_seg_id']]
+            
+            if len(df)>0:
+                # add synapse_xyz
+                df['synapse_x'], df['synapse_y'], df['synapse_z'] = np.stack(df['ctr_pt_position'].T, -1)
+                rename_dict = {
+                    'id': 'synapse_id', 
+                    'size':'synapse_size',
+                }
+                df = df.rename(columns=rename_dict)[['primary_seg_id', 'secondary_seg_id', 'synapse_id', \
+                                                        'prepost', 'synapse_x', 'synapse_y', 'synapse_z', 'synapse_size']]
+                
+                df['import_method'] = params['import_method']
+                
+                return {'df': df}
+            else:
+                return {'df': []}
+
+    class PCGMeshwork(m65mat.ImportMethod.PCGMeshwork):
+        @classmethod
+        def update_method(cls, ver=None, pcg_meshwork_params={}, **kwargs):
+            cls.Log('info', f'Updating method for {cls.class_name}.')
+            
+            # DEFAULTS
+            datastack = 'minnie65_phase3_v1'
+            pcg_meshwork_params.setdefault('n_parallel', 10)
+            pcg_meshwork_params.setdefault('refine', 'all')
+            pcg_meshwork_params.setdefault('collapse_soma', True)
+            pcg_meshwork_params.setdefault('synapses', 'all')
+            pcg_meshwork_params.setdefault('root_point_resolution', [4,4,40])
+
+            # INSERT
+            client = set_CAVE_client(datastack, ver)
+            cls.insert1(
+                {
+                    'meshparty_version': cpvfd('meshparty'),
+                    'caveclient_version': cpvfd('caveclient'),
+                    'pcg_skel_version': cpvfd('pcg-skel'),
+                    'datastack': datastack,
+                    'ver': ver if ver is not None else client.materialize.version,
+                    'synapse_table': 'synapses_pni_2',
+                    'nucleus_table': 'nucleus_detection_v0',
+                    'cloudvolume_version': cpvfd('cloud-volume'),
+                    'cloudvolume_path': client.info.segmentation_source(),
+                    'pcg_meshwork_params': json.dumps(pcg_meshwork_params),
+                    'target_dir': m65mat.config.externals['minnie65_meshwork']['location'],
+                    
+                },
+                insert_to_master=True, 
+                skip_duplicates=True, 
+            )
+
+        def run(self, **kwargs):
+            params = (self & kwargs).fetch1()
+            self.Log('info', f'Running {self.class_name} with params {params}.')
+
+            # INITIALIZE & VALIDATE
+            client = set_CAVE_client(params['datastack'], ver=params['ver'])
+
+            # validate package dependencies
+            packages = {
+                'meshparty_version': 'meshparty',
+                'pcg_skel_version': 'pcg-skel',
+                'caveclient_version': 'caveclient',
+                'cloudvolume_version': 'cloud-volume'
+            }
+
+            self.master.validate_method(
+                names=list(packages.keys()) + ['cloudvolume_path', 'datastack', 'materialization_version'],
+                method_values=[params[k] for k in packages.keys()] + [params['cloudvolume_path'], params['datastack'], params['ver']],
+                current_values=[cpvfd(v) for v in packages.values()] + [client.info.segmentation_source(), client.materialize.datastack_name, client.materialize.version]
+            )
+
+            # IMPORT DATA
+            segment_id = int(kwargs['segment_id'])
+            synapse_table = params['synapse_table']
+            nucleus_table = params['nucleus_table']
+            target_dir = params['target_dir']
+            pcg_meshwork_params = json.loads(params['pcg_meshwork_params'])
+
+            # check that segment has synapses
+            n_presyn = len(client.materialize.query_table(synapse_table, filter_equal_dict={'pre_pt_root_id': segment_id}))
+            n_postsyn = len(client.materialize.query_table(synapse_table, filter_equal_dict={'pre_pt_root_id': segment_id}))
+            if not (n_presyn > 0 or n_postsyn > 0):
+                self.Log('info', f'No synapses found for segment_id {segment_id} in {synapse_table}.')
+                return {'meshwork_obj': []}
+
+            # check if segment has nucleus
+            nuc_df = client.materialize.query_table(nucleus_table, filter_equal_dict={'pt_root_id': segment_id})
+            if len(nuc_df) > 0: 
+                soma_centroid = nuc_df.pt_position.values[0]
+            else: 
+                self.Log('info', f'No nucleus found for segment_id {segment_id} in {nucleus_table}.')
+                soma_centroid = None
+
+            # download meshwork obj
+            meshwork_obj = pcg_skel.pcg_meshwork(
+                root_id=segment_id,
+                client=client,
+                root_point=soma_centroid,
+                synapse_table=synapse_table,
+                **pcg_meshwork_params
+            )
+
+            # make file path
+            filepath = Path(target_dir).joinpath(str(segment_id)).with_suffix('.h5')
+
+            # save meshwork file
+            meshwork_obj.save_meshwork(filepath)
+
+            # append timestamp to filepath 
+            ts_computed = get_file_modification_time(filepath, timezone='US/Central', fmt="%Y-%m-%d_%H:%M:%S")
+            filepath = append_timestamp_to_filepath(filepath, ts_computed, return_filepath=True)
+            
+            return {
+                'segment_id': segment_id, 
+                'import_method': params['import_method'], 
+                'meshwork_obj': filepath, 
+                'ts_computed': ts_computed
+            }
+
+    class PCGSkeleton(m65mat.ImportMethod.PCGSkeleton):
+        @classmethod
+        def update_method(cls, ver=None, pcg_skel_params={}, **kwargs):
+            cls.Log('info', f'Updating method for {cls.class_name}.')
+
+            # DEFAULTS
+            datastack = 'minnie65_phase3_v1'
+            pcg_skel_params.setdefault('n_parallel', 10)
+            pcg_skel_params.setdefault('refine', 'all')
+            pcg_skel_params.setdefault('collapse_soma', True)
+            pcg_skel_params.setdefault('root_point_resolution', [4,4,40])
+
+            # INSERT
+            client = set_CAVE_client(datastack, ver)
+            cls.insert1(
+                {
+                    'meshparty_version': cpvfd('meshparty'),
+                    'caveclient_version': cpvfd('caveclient'),
+                    'pcg_skel_version': cpvfd('pcg-skel'),
+                    'datastack': datastack,
+                    'ver': ver if ver is not None else client.materialize.version,
+                    'synapse_table': 'synapses_pni_2',
+                    'nucleus_table': 'nucleus_detection_v0',
+                    'cloudvolume_version': cpvfd('cloud-volume'),
+                    'cloudvolume_path': client.info.segmentation_source(),
+                    'pcg_skel_params': json.dumps(pcg_skel_params),
+                    'target_dir': m65mat.config.externals['minnie65_pcg_skeletons']['location'],
+                    
+                },
+                insert_to_master=True, 
+                ignore_extra_fields=True,
+                skip_duplicates=True, 
+            )
+            
+        def run(self, **kwargs):
+            params = (self & kwargs).fetch1()
+            self.Log('info', f'Running {self.class_name} with params {params}.')
+
+            # INITIALIZE & VALIDATE
+            client = set_CAVE_client(params['datastack'], ver=params['ver'])
+
+            # validate package dependencies
+            packages = {
+                'meshparty_version': 'meshparty',
+                'pcg_skel_version': 'pcg-skel',
+                'caveclient_version': 'caveclient',
+                'cloudvolume_version': 'cloud-volume'
+            }
+
+            self.master.validate_method(
+                names=list(packages.keys()) + ['cloudvolume_path', 'datastack', 'materialization_version'],
+                method_values=[params[k] for k in packages.keys()] + [params['cloudvolume_path'], params['datastack'], params['ver']],
+                current_values=[cpvfd(v) for v in packages.values()] + [client.info.segmentation_source(), client.materialize.datastack_name, client.materialize.version]
+            )
+            
+            # IMPORT DATA
+            segment_id = int(kwargs['segment_id'])
+            nucleus_table = params['nucleus_table']
+            target_dir = params['target_dir']
+            pcg_skel_params = json.loads(params['pcg_skel_params'])
+
+            # check if segment has nucleus
+            nuc_df = client.materialize.query_table(nucleus_table, filter_equal_dict={'pt_root_id': segment_id})
+            if len(nuc_df) > 0: 
+                soma_centroid = nuc_df.pt_position.values[0]
+            else:
+                self.Log('info', f'No nucleus found for segment_id {segment_id} in {nucleus_table}.')
+                soma_centroid = None
+
+            # download skeleton obj
+            skeleton_obj = pcg_skel.pcg_skeleton(
+                root_id=segment_id,
+                client=client,
+                root_point=soma_centroid,
+                **pcg_skel_params
+            )
+
+            # make file path
+            filepath = Path(target_dir).joinpath(str(segment_id)).with_suffix('.h5')
+
+            # save skeleton file
+            skeleton_obj.write_to_h5(filepath)
+
+            # append timestamp to filepath 
+            ts_computed = get_file_modification_time(filepath, timezone='US/Central', fmt="%Y-%m-%d_%H:%M:%S")
+            filepath = append_timestamp_to_filepath(filepath, ts_computed, return_filepath=True)
+            
+            return {
+                'segment_id': segment_id, 
+                'import_method': params['import_method'], 
+                'skeleton_obj': filepath, 
+                'ts_computed': ts_computed
+            }
 
 class Materialization(m65mat.Materialization):
     
-    class CurrentVersion(m65mat.Materialization.CurrentVersion): pass   
+    class Info(m65mat.Materialization.Info): pass
     
-    class Meta(m65mat.Materialization.Meta): pass
+    class Checkpoint(m65mat.Materialization.Checkpoint):
+        @classmethod
+        def add_checkpoint(cls, name, ver, description):
+            cls.insert1({
+                'name': name,
+                'ver': ver,
+                'description': description
+                }
+            )
 
-    @classmethod
-    def fill(cls, client, ver, description=None, update_latest_tag=True):
-        print('--> Fetching materialization timestamp...')
-        
-        # get materialization timestamp
-        ts = client.materialize.get_version_metadata()['time_stamp'] 
-        
-        print('Inserting data...')
-        # insert materialization version and timestamp
-        cls.insert1({'ver': client.materialize.version, 'timestamp': ts})
-        
-        # insert metadata
-        Materialization.Meta.insert1({'ver': client.materialize.version, 'description': description})
-        print(f'Successfully inserted timestamp: {ts} for materialization version: {client.materialize.version:.2f} with description: "{description}"')        
-        
-        # Update latest tag
-        if update_latest_tag:
-            if ver == -1:
-                try: 
-                    Materialization.CurrentVersion.insert1({'kind': 'latest', 'ver': client.materialize.version})
-                    print(f'Set Materialization.CurrentVersion "latest" to materialization version {client.materialize.version:.2f}')
-
-                except:
-                    (Materialization.CurrentVersion & 'kind="latest"')._update('ver', client.materialize.version)
-                    print(f'Updated Materialization.CurrentVersion "latest" to materialization version {client.materialize.version:.2f}')
-
-
-stable = m65mat.stable
-latest = m65mat.latest
-MICrONS_Mar_2021 = m65mat.MICrONS_Mar_2021
-MICrONS_Jul_2021 = m65mat.MICrONS_Jul_2021
-releaseJun2021 = m65mat.releaseJun2021
-
-def _version_mgr(client, ver, table=Materialization):
-    """ Modify the client to the user specified materialization version and check if the version is already in the DataJoint table. 
-       
-    :param client: CAVEclient object that will be modified by _version_mgr.
+        @classmethod
+        def fill_mat_v1(cls):
+            cls.configure_logger()
+            mat_v1 = dj.create_virtual_module('mat_v1', 'microns_minnie65_materialization')
+            rel = mat_v1.Materialization.CurrentVersion & [{'kind': 'MICrONS_Jul_2021'}, {'kind': 'MICrONS_Mar_2021'}, {'kind': 'release_Jun2021'}]
+            cls.insert(rel.proj(..., name='kind'))
     
-    :param ver: User specified materialization version.
-    
-    returns: 
-        code : 0 if the version already exists in the table
-             : 1 if the version does not exist in the table
+    class MatV1(m65mat.Materialization.MatV1):
+        @property
+        def key_source(self):
+            return dj.create_virtual_module('mat_v1', 'microns_minnie65_materialization').Materialization
         
-        client :  the client set to the user specified materialization version
-    """
-    code=None
-    
-    # set version if desired version is not latest 
-    if ver != -1:
-        if ver == client.materialize.most_recent_version():
-            print(f'Materialization version {ver:.2f} is currently the latest version.')
+        def get(self, key):
+            return (self.key_source & key).fetch1()
         
-        else:
-            client.materialize._version = ver
-            print(f'Materialization version set to {client.materialize.version:.2f}. This is not the latest version.') 
+        def make(self, key):
+            row = self.get(key)
+            row.update({'time_stamp': row['timestamp'], 'datastack': 'minnie65_phase3_v1'})
+            self.master.insert1(row, ignore_extra_fields=True, skip_duplicates=True)
+            self.master.Info.insert1(row, ignore_extra_fields=True, skip_duplicates=True)
+            self.insert1(row, ignore_extra_fields=True, skip_duplicates=True)
     
-    else:
-        print(f'Checking for new materialization...') 
-    
-    # check if version exists in table
-    if len(table.Meta & f'ver={client.materialize.version}') > 0:
-        code = 0
-        print(f'Materialization version {client.materialize.version:.2f} already in schema.')
-        return code, client
-
-    else:
-        code = 1
-        print(f'Found new materialization version: {client.materialize.version:.2f}')
-        return code, client
-
+    class CAVE(m65mat.Materialization.CAVE):
+        @property
+        def key_source(self):
+            return ImportMethod.MaterializationVer - Materialization
+        
+        def make(self, key):
+            result = {**key, **ImportMethod.run(key)}
+            Materialization.insert1(result, ignore_extra_fields=True, skip_duplicates=True)
+            Materialization.Info.insert1(result, ignore_extra_fields=True, skip_duplicates=True)
+            self.insert1(result, insert_to_master=True, ignore_extra_fields=True, skip_duplicates=True)
 
 
 class Nucleus(m65mat.Nucleus):
     
     class Info(m65mat.Nucleus.Info): pass
-        
-    class Meta(m65mat.Nucleus.Meta): pass
     
-    @classmethod
-    def fetch_df(cls, client):
-        print(f'Fetching data for materialization version {client.materialize.version:.2f}... ')
-        # fetch nucleus dataframe
-        nuc_df = client.materialize.query_table('nucleus_detection_v0')
-        
-        # reformat nucleus dataframe
-        rename_dict = {
-            'id': 'nucleus_id',
-            'pt_root_id': 'segment_id',
-            'pt_supervoxel_id': 'supervoxel_id'
-        }
-        
-        nuc_copy = nuc_df[['id', 'pt_supervoxel_id', 'pt_root_id', 'volume']].copy().rename(columns=rename_dict)
-        nuc_copy['ver'] = client.materialize.version
-        nuc_copy['nucleus_x'], nuc_copy['nucleus_y'], nuc_copy['nucleus_z'] = np.stack(nuc_df.pt_position.values).T
-        return nuc_copy
+    class MatV1(m65mat.Nucleus.MatV1):
+        @classmethod
+        def fill(cls):
+            cls.configure_logger()
+            m65mat_v1 = dj.create_virtual_module('mat_v1', 'microns_minnie65_materialization')
+            with dj.conn().transaction:
+                cls.master.insert(m65mat_v1.Nucleus.Info, ignore_extra_fields=True, skip_duplicates=True)
+                cls.master.Info.insert(m65mat_v1.Nucleus.Info, ignore_extra_fields=True, skip_duplicates=True)
+                cls.insert(m65mat_v1.Nucleus.Info, ignore_extra_fields=True, skip_duplicates=True)
     
-    @classmethod
-    def fill_synapse_segment_source(cls):
-        print('--> Filling SynapseSegmentSource table...')
-        to_insert = (dj.U('segment_id') & (cls.Info & 'segment_id>0')) - SynapseSegmentSource.proj()
-        SynapseSegmentSource.insert(to_insert)
-        print(f'Inserted {len(to_insert)} new segments.')
-
-    @classmethod
-    def fill(cls, client, description=None):
-        print('--> Filling Nucleus table...')
+    class CAVE(m65mat.Nucleus.CAVE):
+        @property
+        def key_source(self):
+            return ImportMethod.NucleusSegment & (Materialization & (Materialization.CAVE - Nucleus.Info.proj()))
         
-        # fetch data from materialization service
-        df = cls.fetch_df(client)
-        
-        # insert nucleus id to master table
-        cls.insert(df[['nucleus_id']].to_records(index=False), skip_duplicates=True)
-            
-        print('Inserting data...')
-        # insert nucleus dataframe to Info
-        cls.Info.insert(df.to_records(index=False))
-        
-        # insert metadata
-        cls.Meta.insert1({'ver': client.materialize.version, 'description': description})
-        print(f'Successfully inserted nucleus information for materialization version: {client.materialize.version:.2f}')
+        def make(self, key):
+            df = ImportMethod.run(key)['df']
+            self.master.insert(df, ignore_extra_fields=True, skip_duplicates=True)
+            self.master.Info.insert(df, ignore_extra_fields=True, skip_duplicates=True)
+            self.insert(df, insert_to_master=True, ignore_extra_fields=True, skip_duplicates=True, insert_to_master_kws={'ignore_extra_fields': True, 'skip_duplicates': True})
 
 
+class Segment(m65mat.Segment):
 
-class FunctionalCoreg(m65mat.FunctionalCoreg):
-        
-    class Meta(m65mat.FunctionalCoreg.Meta): pass
+    class MatV1(m65mat.Segment.MatV1):       
+        @classmethod
+        def fill(cls):
+            cls.master.insert(Nucleus.MatV1, ignore_extra_fields=True, skip_duplicates=True)
+            cls.insert(Nucleus.MatV1, ignore_extra_fields=True, skip_duplicates=True)
     
-    @classmethod
-    def fetch_df(cls, client):
-        print(f'Fetching data for materialization version {client.materialize.version:.2f}... ')
+    class Nucleus(m65mat.Segment.Nucleus):
+        @property
+        def key_source(self):
+            return Materialization & Nucleus.Info()
         
-        # fetch dataframes
-        fc_df = client.materialize.query_table('functional_coreg', filter_out_dict={'pt_root_id': [0]})
-        nuc_df = client.materialize.query_table('nucleus_detection_v0', filter_out_dict={'pt_root_id': [0]})
-        
-        # merge proofread and nucleus dataframes
-        rename_dict = {
-            'id_x': 'nucleus_id', 
-            'pt_root_id': 'segment_id', 
-            'pt_position_y':'centroid', 
-            'pt_supervoxel_id_y': 'supervoxel_id',
-            'session': 'scan_session'
-        }
-        fc_nuc_df_orig = pd.merge(nuc_df, fc_df, on='pt_root_id').rename(columns=rename_dict)
-        fc_nuc_df = fc_nuc_df_orig[['nucleus_id', 'segment_id', 'supervoxel_id', 'scan_session', 'scan_idx', 'unit_id']].copy()
-        fc_nuc_df['ver'] = client.materialize.version
-        fc_nuc_df['centroid_x'], fc_nuc_df['centroid_y'], fc_nuc_df['centroid_z'] = np.stack(fc_nuc_df_orig.centroid.values).T
-        return fc_nuc_df
-    
-    @classmethod
-    def fill(cls, client, description=None):
-        print('--> Filling FunctionalCoreg table...')
-        
-        # fetch data from materialization service
-        df = cls.fetch_df(client)
-        
-        print('Inserting data...')
-        # insert to main table
-        cls.insert(df.to_records(index=False), skip_duplicates=True)
-        
-        # insert metadata
-        cls.Meta.insert1({'ver': client.materialize.version, 'description': description})
-        print(f'Successfully inserted functional coregistration for materialization version: {client.materialize.version:.2f}')
+        def make(self, key):
+            self.master.insert(Nucleus.Info & key, ignore_extra_fields=True, skip_duplicates=True)
+            self.insert(Nucleus.Info & key, ignore_extra_fields=True, skip_duplicates=True)
 
 
-class ProofreadSegment(m65mat.ProofreadSegment):
-
-    class Meta(m65mat.ProofreadSegment): pass
-
-    @classmethod
-    def fetch_df(cls, client):
-        print(f'Fetching data for materialization version {client.materialize.version:.2f}... ')
-        
-        # fetch dataframes
-        fc_df = client.materialize.query_table('proofreading_functional_coreg_v2', filter_out_dict={'pt_root_id': [0]})
-        fc_df['ver'] = client.materialize.version
-        return fc_df[['ver','pt_root_id']].rename(columns={'pt_root_id':'segment_id'}).drop_duplicates().reset_index(drop=True)
-
-    @classmethod
-    def fill(cls, client, description=None):
-        print('--> Filling ProofreadSegment table...')
-        
-        # fetch data from materialization service
-        df = cls.fetch_df(client)
-        
-        print('Inserting data...')
-        # insert info to main table
-        cls.insert(df.to_records(index=False), skip_duplicates=True)
-        
-        # insert metadata
-        cls.Meta.insert1({'ver': client.materialize.version, 'description': description})
-        print(f'Successfully inserted proofread segments for materialization version: {client.materialize.version:.2f}')
-
-
-class ProofreadFunctionalCoregV2(m65mat.ProofreadFunctionalCoregV2):
-        
-    class Meta(m65mat.ProofreadFunctionalCoregV2.Meta): pass
-    
-    @classmethod
-    def fetch_df(cls, client):
-        print(f'Fetching data for materialization version {client.materialize.version:.2f}... ')
-        
-        # fetch dataframes
-        fc_df = client.materialize.query_table('proofreading_functional_coreg_v2', filter_out_dict={'pt_root_id': [0]})
-        nuc_df = client.materialize.query_table('nucleus_detection_v0', filter_out_dict={'pt_root_id': [0]})
-        
-        # merge proofread and nucleus dataframes
-        rename_dict = {
-            'id_x': 'nucleus_id', 
-            'pt_root_id': 'segment_id', 
-            'pt_position_y':'centroid', 
-            'pt_supervoxel_id_y': 'supervoxel_id',
-            'session': 'scan_session'
-        }
-        fc_nuc_df_orig = pd.merge(nuc_df, fc_df, on='pt_root_id').rename(columns=rename_dict)
-        fc_nuc_df = fc_nuc_df_orig[['nucleus_id', 'segment_id', 'supervoxel_id', 'scan_session', 'scan_idx', 'unit_id']].copy()
-        fc_nuc_df['ver'] = client.materialize.version
-        fc_nuc_df['centroid_x'], fc_nuc_df['centroid_y'], fc_nuc_df['centroid_z'] = np.stack(fc_nuc_df_orig.centroid.values).T
-        return fc_nuc_df
-
-
-class SynapseSegmentSource(m65mat.SynapseSegmentSource): pass
+class Exclusion(m65mat.Exclusion): pass
 
 
 class Synapse(m65mat.Synapse):
+
+    class Info(m65mat.Synapse.Info): pass
     
-    client = None
+    class MatV1(m65mat.Synapse.MatV1):
+        @classmethod
+        def fill(cls):
+            m65mat_v1 = dj.create_virtual_module('mat_v1', 'microns_minnie65_materialization')
+            with dj.conn().transaction:
+                cls.master.insert(m65mat_v1.Synapse, ignore_extra_fields=True, skip_duplicates=True)
+                cls.master.Info.insert(m65mat_v1.Synapse, ignore_extra_fields=True, skip_duplicates=True)
+                cls.insert(m65mat_v1.Synapse, ignore_extra_fields=True, skip_duplicates=True)
+
+    class SegmentExclude(m65mat.Synapse.SegmentExclude): pass
+
+    class CAVE(m65mat.Synapse.CAVE):
+        @property
+        def key_source(self):
+            return (Segment.proj(primary_seg_id='segment_id') - Synapse.Info - Synapse.SegmentExclude) * ImportMethod.Synapse2
+
+        def make(self, key):
+            df = ImportMethod.run(key)['df']
+            if len(df) > 0:
+                self.master.insert(df, ignore_extra_fields=True, skip_duplicates=True)
+                self.master.Info.insert(df, ignore_extra_fields=True, skip_duplicates=True)
+                self.insert(df, ignore_extra_fields=True)
+            else:
+                self.master.SegmentExclude.insert1({'primary_seg_id': key['primary_seg_id'], 'synapse_id': 0, Exclusion.hash_name: Exclusion.hash1({'reason': 'no synapse data'})}, skip_duplicates=True)
+
+
+class Mesh(m65mat.Mesh):
     
-    @property
-    def key_source(self):
-        return (SynapseSegmentSource & {'include': 1}).proj(primary_seg_id='segment_id')
+    class Object(m65mat.Mesh.Object): pass
     
-    @classmethod
-    def initialize_client(cls, ver='latest'):
-        print(f'--> Initializing client...')
+    class MeshParty(m65mat.Mesh.MeshParty):
+        @property
+        def key_source(self):
+            return ((Segment & Segment.Nucleus & 'segment_id!= 0')  - Mesh.MeshParty.proj()) * ImportMethod.MeshPartyMesh2
         
-        client = CAVEclient('minnie65_phase3_v1')
+        def make(self, key):
+            result = {**key, **ImportMethod.run(key)}
+            result = {**{self.hash_name: self.hash1(result)}, **result}
+            self.master.insert1(result, ignore_extra_fields=True, skip_duplicates=True)
+            self.master.Object.insert1(result, ignore_extra_fields=True, skip_duplicates=True)
+            self.insert1(result, insert_to_master=True, skip_hashing=True, ignore_extra_fields=True, skip_duplicates=True, insert_to_master_kws={'ignore_extra_fields': True, 'skip_duplicates': True})
+
+
+class Meshwork(m65mat.Meshwork):
+
+    class PCGMeshwork(m65mat.Meshwork.PCGMeshwork): pass
+
+    class PCGMeshworkExclude(m65mat.Meshwork.PCGMeshworkExclude): pass
         
-        if ver == 'latest':
-            ver = client.materialize.most_recent_version()
-            print(f'Latest version specified.')
+    class PCGMeshworkMaker(m65mat.Meshwork.PCGMeshworkMaker):
+        @property
+        def key_source(self):
+            return ((Segment & Segment.Nucleus & 'segment_id!= 0')  - Meshwork.PCGMeshworkMaker.proj() - Meshwork.PCGMeshworkExclude.proj()) * ImportMethod.PCGMeshwork.get_latest_entries()
         
-        client.materialize._version = ver  
-        print(f'Version set to: {ver:.2f}')
-              
-        cls.client = client
+        def make(self, key):
+            result = {**key, **ImportMethod.run(key)}
+            if result['meshwork_obj']:
+                result = {**{self.hash_name: self.hash1(result)}, **result}
+                self.master.insert1(result, ignore_extra_fields=True, skip_duplicates=True)
+                self.master.PCGMeshwork.insert1(result, ignore_extra_fields=True, skip_duplicates=True)
+                self.insert1(result, insert_to_master=True, skip_hashing=True, ignore_extra_fields=True, skip_duplicates=True, insert_to_master_kws={'ignore_extra_fields': True, 'skip_duplicates': True})
+            else:
+                self.master.PCGMeshworkExclude.insert1({'segment_id': key['segment_id'], 'meshwork_id': 0, Exclusion.hash_name: Exclusion.hash1({'reason': 'no synapse data'}), 'ts_computed': str(datetime.now())}, ignore_extra_fields=True, skip_duplicates=True)
+
+
+class Skeleton(m65mat.Skeleton):
+
+    class PCGSkeleton(m65mat.Skeleton.PCGSkeleton): pass
         
-        print(f'Client initialized.')
+    class PCGSkeletonMaker(m65mat.Skeleton.PCGSkeletonMaker):
+        @property
+        def key_source(self):
+            return ((Segment & Segment.Nucleus & 'segment_id!= 0')  - Skeleton.PCGSkeletonMaker.proj()) * ImportMethod.PCGSkeleton.get_latest_entries()
+
+        def make(self, key):
+            result = {**key, **ImportMethod.run(key)}
+            result = {**{self.hash_name: self.hash1(result)}, **result}
+            self.master.insert1(result, ignore_extra_fields=True, skip_duplicates=True)
+            self.master.PCGSkeleton.insert1(result, ignore_extra_fields=True, skip_duplicates=True)
+            self.insert1(result, insert_to_master=True, skip_hashing=True, ignore_extra_fields=True, skip_duplicates=True, insert_to_master_kws={'ignore_extra_fields': True, 'skip_duplicates': True})
+
+
+class Queue(m65mat.Queue):
+
+    class Materialization(m65mat.Queue.Materialization): pass
+
+    class PCGMeshwork(m65mat.Queue.PCGMeshwork): pass
     
-    def make(self, key):
-        primary_seg_id = np.int(key['primary_seg_id'])
-              
-        # get synapses where primary segment is presynaptic
-        df_pre = self.client.materialize.query_table('synapses_pni_2', filter_equal_dict={'pre_pt_root_id': primary_seg_id})
-        df_pre = df_pre.rename(columns={'pre_pt_root_id':'primary_seg_id', 'post_pt_root_id': 'secondary_seg_id'})
-        df_pre['prepost'] = 'presyn'
-        
-        # get synapses where primary segment is postsynaptic
-        df_post = self.client.materialize.query_table('synapses_pni_2', filter_equal_dict={'post_pt_root_id': primary_seg_id})
-        df_post = df_post.rename(columns={'post_pt_root_id':'primary_seg_id', 'pre_pt_root_id': 'secondary_seg_id'})
-        df_post['prepost'] = 'postsyn'
-        
-        # combine dataframes
-        df = pd.concat([df_pre, df_post], axis=0)
-        
-        # remove autapses (these are mostly errors)
-        df = df[df['primary_seg_id']!=df['secondary_seg_id']]
-        
-        if len(df)>0:
-            # add synapse_xyz
-            df['synapse_x'], df['synapse_y'], df['synapse_z'] = np.stack(df['ctr_pt_position'].T, -1)
-
-            rename_dict = {
-                'id': 'synapse_id', 
-                'size':'synapse_size',
-            }
-            
-            final_df = df.rename(columns=rename_dict)[['primary_seg_id', 'secondary_seg_id', 'synapse_id', \
-                                                       'prepost', 'synapse_x', 'synapse_y', 'synapse_z', 'synapse_size']]
-
-            self.insert(final_df.to_records(index=False))
-        
-        else:
-            # print(f'No synapses found for primary_seg_id: {primary_seg_id}. Updating SynapseSegmentSource with "include=0".')
-            (SynapseSegmentSource & {'segment_id': primary_seg_id})._update('include', 0)
+    class PCGSkeleton(m65mat.Queue.PCGSkeleton): pass
 
 
-def fetch_materialization(ver=-1, update_latest_tag=True):
-    # check that client has an auth token
-    try:
-        client = CAVEclient('minnie65_phase3_v1')
-    except:
-        traceback.print_exc()
-        client = CAVEclient()
-        client.auth.get_new_token()
-        token = f"{input(prompt='Paste token (without quotes):')}"
-        client.auth.save_token(token=token, overwrite=True)
-        print('Checking token...')
+def update_log_level(loglevel, update_root_level=True):
+    """
+    Updates module and root logger.
 
-        try:
-            client = CAVEclient('minnie65_phase3_v1')
-        except:
-            print('Didnt work. Try running "client.auth.save_token(token="PASTE_TOKEN_HERE", overwrite=True)" inside the notebook.')
-            return
-    print('Authentication successful.')
-
-    # handle materialization version
-    code, client = _version_mgr(client=client, ver=ver)
-        
-    if code == 0:
-        return
+    :param loglevel: (str) desired log level to overwrite default
+    :param update_root_level: (bool) updates root level with provided loglevel
+    """
+    logger = djp.getLogger(__name__, level=loglevel, update_root_level=update_root_level)
+    logger.info(f'Logging level set to {loglevel}.')
     
-    print('Fetching materialization...')
-    previous_version = (Materialization.CurrentVersion() & {'kind':"latest"}).fetch1('ver')
-
-    try: 
-        # run fill method for tables
-        Materialization.fill(client=client, ver=ver, update_latest_tag=update_latest_tag)
-        Nucleus.fill(client=client)
-        Nucleus.fill_synapse_segment_source()
-        FunctionalCoreg.fill(client=client)
-        ProofreadSegment.fill(client=client)
-        ProofreadFunctionalCoregV2.fill(client=client)
-        Synapse.initialize_client(ver=client.materialize.version)
-        print('--> Filling Synapse table with latest segments from SynapseSegmentSource...')
-        Synapse.populate(display_progress=True, suppress_errors=True)
-        print('Ensure that no errors occured during Synapse download by checking: "schema.jobs" table')
-        print('Done.')
-
-    except:
-        print('The materialization download failed with the following error:')
-        traceback.print_exc()
-        print(f'Resetting "latest version" to previous version: {previous_version:.2f}...')
-        (Materialization.CurrentVersion() & {'kind':"latest"})._update('ver', previous_version)
-        print(f'Successfully reset "latest version" to {previous_version:.2f}.')
-        print('Do you want to delete partial data?')
-        (Materialization & {'ver': client.materialize.version}).delete()
+    # update tables in module
+    # TODO - write this recursively
+    logger.info('Updating loglevel for all tables.')
+    for name, obj in inspect.getmembers(sys.modules[__name__]):
+        if name in ['key_source', '_master', 'master', 'UserTable']:
+            continue
+        if hasattr(obj, 'loglevel'):
+            obj.loglevel = loglevel
+            for partname, subobj in inspect.getmembers(obj):
+                if partname in ['key_source', '_master', 'master', 'UserTable']:
+                    continue
+                if hasattr(subobj, 'loglevel'):
+                    subobj.loglevel = loglevel
 
 
-## ADDITIONAL TABLES
+def download_materialization(ver=None, download_synapses=False, download_meshes=False, loglevel=None, update_root_level=True):
+    """
+    Downloads materialization from CAVE.
 
-class AllenV1ColumnTypesSlanted(m65mat.AllenV1ColumnTypesSlanted):
-        
-    class Meta(m65mat.AllenV1ColumnTypesSlanted.Meta): pass
+    :param ver: (int) materialization version to download
+        If None, latest materialization is downloaded.
+    :param loglevel: (str) Optional, desired log level to overwrite default
+    :param update_root_level: (bool) updates root level with provided loglevel
+    """
+    logger.info(f'Materialization download initialized.')
     
-    @classmethod
-    def fetch_df(cls, client):
-        print(f'Fetching data for materialization version {client.materialize.version:.2f}... ')
-        
-        # fetch dataframes
-        nuc_df = client.materialize.query_table('nucleus_detection_v0', split_positions=True, filter_out_dict={'pt_root_id': [0]})
-        col_df = client.materialize.query_table('allen_v1_column_types_slanted', split_positions=True, filter_out_dict={'pt_root_id': [0]})
-        merge_df = col_df.merge(nuc_df, on=['pt_root_id', 'valid'])
+    if loglevel is not None:
+        update_log_level(loglevel=loglevel, update_root_level=update_root_level)
 
-        # merge proofread and nucleus dataframes
-        rename_dict = {
-            'id_y': 'nucleus_id',
-            'pt_root_id': 'segment_id',
-            'pt_position_x_y': 'centroid_x',
-            'pt_position_y_y': 'centroid_y',
-            'pt_position_z_y': 'centroid_z',
-            'pt_supervoxel_id_y': 'supervoxel_id'
-        }
-        merge_df2 = merge_df.merge(merge_df.groupby(['pt_root_id'], as_index=False).nunique()[['pt_root_id', 'id_y']].rename(columns={'id_y': 'n_nuc'}))
-        final_df = merge_df2.rename(columns=rename_dict)
-        final_df['ver'] = client.materialize.version
-        final_df['valid'] = 1*(final_df.valid.values == 't')
+    methods = [
+        ImportMethod.MaterializationVer,
+        ImportMethod.NucleusSegment,
+    ]
 
-        return final_df
-    
-    @classmethod
-    def fill(cls, client, description=None):
-        print('--> Filling AllenV1ColumnTypesSlanted table...')
-        
-        # fetch data from materialization service
-        df = cls.fetch_df(client)
-        
-        print('Inserting data...')
-        # insert info to main table
-        cls.insert(df.to_records(index=False), skip_duplicates=True, ignore_extra_fields=True)
-        
-        # insert metadata
-        cls.Meta.insert1({'ver': client.materialize.version, 'description': description})
-        print(f'Successfully inserted data for materialization version: {client.materialize.version:.2f}')
+    makers = [
+        Materialization.CAVE,
+        Nucleus.CAVE,
+        Segment.Nucleus,
+    ]
+
+    if download_synapses:
+        methods += [ImportMethod.Synapse2]
+        makers += [Synapse.CAVE]
+
+    if download_meshes:
+        methods += [ImportMethod.MeshPartyMesh2]
+        makers += [Mesh.MeshParty]
+
+    for m in methods:
+        logger.info(f'Updating methods for {m.class_name}.')
+        m.update_method(ver=ver)
+
+    for mk in makers:
+        logger.info(f'Populating {mk.class_name}.')
+        mk.populate(m.master & m.get_latest_entries(), reserve_jobs=True, order='random', suppress_errors=True)
 
 
-class AllenSomaCourseCellClassModelV1(m65mat.AllenSomaCourseCellClassModelV1):
-        
-    class Meta(m65mat.AllenSomaCourseCellClassModelV1.Meta): pass
-    
-    @classmethod
-    def fetch_df(cls, client):
-        print(f'Fetching data for materialization version {client.materialize.version:.2f}... ')
-        
-        # fetch dataframes
-        nuc_df = client.materialize.query_table('nucleus_detection_v0', split_positions=True, filter_out_dict={'pt_root_id': [0]})
-        col_df = client.materialize.query_table('allen_soma_coarse_cell_class_model_v1', split_positions=True, filter_out_dict={'pt_root_id': [0]})
-        merge_df = col_df.merge(nuc_df, on=['pt_root_id', 'valid'])
+def download_meshwork_objects(restriction={}, loglevel=None, update_root_level=True):
+    """
+    Downloads meshwork objects from cloud-volume.
 
-        # merge proofread and nucleus dataframes
-        rename_dict = {
-            'id_y': 'nucleus_id',
-            'pt_root_id': 'segment_id',
-            'pt_position_x_y': 'centroid_x',
-            'pt_position_y_y': 'centroid_y',
-            'pt_position_z_y': 'centroid_z',
-            'pt_supervoxel_id_y': 'supervoxel_id'
-        }
-        merge_df2 = merge_df.merge(merge_df.groupby(['pt_root_id'], as_index=False).nunique()[['pt_root_id', 'id_y']].rename(columns={'id_y': 'n_nuc'}))
-        final_df = merge_df2.rename(columns=rename_dict)
-        final_df['ver'] = client.materialize.version
-        final_df['valid'] = 1*(final_df.valid.values == 't')
+    :param restriction: restriction to pass to populate
+    :param loglevel: (str) Optional, desired log level to overwrite default
+    :param update_root_level: (bool) updates root level with provided loglevel
+    """        
+    logger.info(f'Meshwork download initialized.')
 
-        return final_df
-    
-    @classmethod
-    def fill(cls, client, description=None):
-        print('--> Filling AllenSomaCourseCellClassModelV1 table...')
-        
-        # fetch data from materialization service
-        df = cls.fetch_df(client)
-        
-        print('Inserting data...')
-        # insert info to main table
-        cls.insert(df.to_records(index=False), skip_duplicates=True, ignore_extra_fields=True)
-        
-        # insert metadata
-        cls.Meta.insert1({'ver': client.materialize.version, 'description': description})
-        print(f'Successfully inserted data for materialization version: {client.materialize.version:.2f}')
+    if loglevel is not None:
+        update_log_level(loglevel=loglevel, update_root_level=update_root_level)
+
+    Meshwork.PCGMeshworkMaker.populate(restriction, reserve_jobs=True, order='random', suppress_errors=True)
 
 
-class AllenSomaCourseCellClassModelV2(m65mat.AllenSomaCourseCellClassModelV2):
-        
-    class Meta(m65mat.AllenSomaCourseCellClassModelV2.Meta): pass
-    
-    @classmethod
-    def fetch_df(cls, client):
-        print(f'Fetching data for materialization version {client.materialize.version:.2f}... ')
-        
-        # fetch dataframes
-        nuc_df = client.materialize.query_table('nucleus_detection_v0', split_positions=True, filter_out_dict={'pt_root_id': [0]})
-        col_df = client.materialize.query_table('allen_soma_coarse_cell_class_model_v2', split_positions=True, filter_out_dict={'pt_root_id': [0]})
-        merge_df = col_df.merge(nuc_df, on=['pt_root_id', 'valid'])
+def download_pcg_skeletons(restriction={}, loglevel=None, update_root_level=True):
+    """
+    Downloads meshwork objects from cloud-volume.
 
-        # merge proofread and nucleus dataframes
-        rename_dict = {
-            'id_y': 'nucleus_id',
-            'pt_root_id': 'segment_id',
-            'pt_position_x_y': 'centroid_x',
-            'pt_position_y_y': 'centroid_y',
-            'pt_position_z_y': 'centroid_z',
-            'pt_supervoxel_id_y': 'supervoxel_id'
-        }
-        merge_df2 = merge_df.merge(merge_df.groupby(['pt_root_id'], as_index=False).nunique()[['pt_root_id', 'id_y']].rename(columns={'id_y': 'n_nuc'}))
-        final_df = merge_df2.rename(columns=rename_dict)
-        final_df['ver'] = client.materialize.version
-        final_df['valid'] = 1*(final_df.valid.values == 't')
+    :param restriction: restriction to pass to populate
+    :param loglevel: (str) Optional, desired log level to overwrite default
+    :param update_root_level: (bool) updates root level with provided loglevel
+    """        
+    logger.info(f'Meshwork download initialized.')
 
-        return final_df
-    
-    @classmethod
-    def fill(cls, client, description=None):
-        print('--> Filling AllenSomaCourseCellClassModelV2 table...')
-        
-        # fetch data from materialization service
-        df = cls.fetch_df(client)
-        
-        print('Inserting data...')
-        # insert info to main table
-        cls.insert(df.to_records(index=False), skip_duplicates=True, ignore_extra_fields=True)
-        
-        # insert metadata
-        cls.Meta.insert1({'ver': client.materialize.version, 'description': description})
-        print(f'Successfully inserted data for materialization version: {client.materialize.version:.2f}')
+    if loglevel is not None:
+        update_log_level(loglevel=loglevel, update_root_level=update_root_level)
+
+    Skeleton.PCGSkeletonMaker.populate(restriction, reserve_jobs=True, order='random', suppress_errors=True)
