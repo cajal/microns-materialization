@@ -2,54 +2,53 @@
 Adapters for DataJoint tables.
 """
 
-import datajoint as dj
-import numpy as np
+import json
+
 import h5py
-import os
 import trimesh
+from meshparty import meshwork, skeleton
+from microns_utils.adapter_utils import FilePathAdapter, adapt_mesh_hdf5
 
-from collections import namedtuple
 
-
-class MeshAdapter(dj.AttributeAdapter):
-    # Initialize the correct attribute type (allows for use with multiple stores)
-    def __init__(self, attribute_type):
-        self.attribute_type = attribute_type
-        super().__init__()
-
-    attribute_type = '' # this is how the attribute will be declared
-
-    TriangularMesh = namedtuple('TriangularMesh', ['segment_id', 'vertices', 'faces'])
-    
-    def put(self, filepath):
-        # save the filepath to the mesh
-        filepath = os.path.abspath(filepath)
-        assert os.path.exists(filepath)
-        return filepath
-
+class TrimeshAdapter(FilePathAdapter):
     def get(self, filepath):
-        # access the h5 file and return a mesh
-        assert os.path.exists(filepath)
-
-        with h5py.File(filepath, 'r') as hf:
-            vertices = hf['vertices'][()].astype(np.float64)
-            faces = hf['faces'][()].reshape(-1, 3).astype(np.uint32)
-        
-        segment_id = os.path.splitext(os.path.basename(filepath))[0]
-
-        return trimesh.Trimesh(vertices = vertices,faces=faces)
+        filepath = super().get(filepath)
+        mesh = adapt_mesh_hdf5(filepath, parse_filepath_stem=False, return_type='namedtuple')
+        return trimesh.Trimesh(vertices=mesh.vertices, faces=mesh.faces)
 
 
-# instantiate for use as a datajoint type
-h01_meshes = MeshAdapter('filepath@h01_meshes')
-minnie65_meshes = MeshAdapter('filepath@minnie65_meshes')
+class MeshworkAdapter(FilePathAdapter):
+    def get(self, filepath):
+        filepath = super().get(filepath)
+        return meshwork.load_meshwork(filepath)
 
-# also store in one object for ease of use with virtual modules
 
-h01_materialization = {
-    'h01_meshes': h01_meshes,
-}
+class PCGSkelAdapter(FilePathAdapter):
+    def get(self, filepath):
+        filepath = super().get(filepath)
+        with h5py.File(filepath, 'r') as f:
+            vertices = f['vertices'][()]
+            edges = f['edges'][()]
+            mesh_to_skel_map = f['mesh_to_skel_map'][()]
+            root = f['root'][()]
+            meta = json.loads(f['meta'][()])
+            skel = skeleton.Skeleton(vertices=vertices, edges=edges, mesh_to_skel_map=mesh_to_skel_map, root=root, meta=meta)
+        return skel
+
+# M65
+minnie65_meshes = TrimeshAdapter('filepath@minnie65_meshes')
+minnie65_meshwork = MeshworkAdapter('filepath@minnie65_meshwork')
+minnie65_pcg_skeletons = PCGSkelAdapter('filepath@minnie65_pcg_skeletons')
 
 minnie65_materialization = {
     'minnie65_meshes': minnie65_meshes,
+    'minnie65_meshwork': minnie65_meshwork,
+    'minnie65_pcg_skeletons': minnie65_pcg_skeletons
+}
+
+# H01
+h01_meshes = TrimeshAdapter('filepath@h01_meshes')
+
+h01_materialization = {
+    'h01_meshes': h01_meshes,
 }

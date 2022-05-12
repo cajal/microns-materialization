@@ -17,7 +17,7 @@ h01_materialization_config = SchemaConfig(
 
 minnie65_materialization_config = SchemaConfig(
     module_name='minnie65_materialization',
-    schema_name='microns_minnie65_materialization',
+    schema_name='microns_minnie65_materialization_v3',
     externals=externals.minnie65_materialization,
     adapters=adapters.minnie65_materialization
 )
