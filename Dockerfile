@@ -2,7 +2,6 @@ FROM at-docker.ad.bcm.edu:5000/microns-base
 LABEL maintainer="Stelios Papadopoulos <spapadop@bcm.edu>"
 
 RUN pip3 install \
-        meshparty \
         pcg-skel \
         cloud-volume \
         analysisdatalink\
