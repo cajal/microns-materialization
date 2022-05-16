@@ -2,7 +2,7 @@
 DataJoint tables for importing h01 from Jeff Lichtman group.
 """
 import datajoint as dj
-import datajoint.datajoint_plus as djp
+import datajoint_plus as djp
 
 from ..config import h01_materialization_config as config
 
