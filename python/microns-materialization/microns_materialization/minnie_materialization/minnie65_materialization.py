@@ -164,7 +164,7 @@ class ImportMethod(m65mat.ImportMethod):
                     'ver': ver if ver is not None else client.materialize.version,
                     'cloudvolume_path': client.info.segmentation_source(),
                     'download_meshes_kwargs': json.dumps(download_meshes_kwargs),
-                    'target_dir': m65mat.config.externals['minnie65_meshes']['location'],
+                    'target_dir': config.externals['minnie65_meshes']['location'],
                     
                 },
                 insert_to_master=True, 
@@ -312,7 +312,7 @@ class ImportMethod(m65mat.ImportMethod):
                     'cloudvolume_version': cpvfd('cloud-volume'),
                     'cloudvolume_path': client.info.segmentation_source(),
                     'pcg_meshwork_params': json.dumps(pcg_meshwork_params),
-                    'target_dir': m65mat.config.externals['minnie65_meshwork']['location'],
+                    'target_dir': config.externals['minnie65_meshwork']['location'],
                     
                 },
                 insert_to_master=True, 
@@ -414,7 +414,7 @@ class ImportMethod(m65mat.ImportMethod):
                     'cloudvolume_version': cpvfd('cloud-volume'),
                     'cloudvolume_path': client.info.segmentation_source(),
                     'pcg_skel_params': json.dumps(pcg_skel_params),
-                    'target_dir': m65mat.config.externals['minnie65_pcg_skeletons']['location'],
+                    'target_dir': config.externals['minnie65_pcg_skeletons']['location'],
                     
                 },
                 insert_to_master=True, 
