@@ -22,7 +22,7 @@ logger = djp.getLogger(__name__)
 
 # Utils
 from microns_utils.adapter_utils import adapt_mesh_hdf5
-from microns_utils.ap_utils import set_CAVE_client
+from microns_utils.ap_utils import set_CAVEclient
 from microns_utils.filepath_utils import (append_timestamp_to_filepath,
                                           get_file_modification_time)
 from microns_utils.misc_utils import wrap
@@ -56,7 +56,7 @@ class ImportMethod(m65mat.ImportMethod):
             datastack = 'minnie65_phase3_v1'
             
             # INSERT
-            client = set_CAVE_client(datastack, ver)
+            client = set_CAVEclient(datastack, ver)
             cls.insert1({
                 'caveclient_version': cpvfd('caveclient'),
                 'datastack': datastack,
@@ -68,7 +68,7 @@ class ImportMethod(m65mat.ImportMethod):
             self.Log('info', f'Running {self.class_name} with params {params}.')
 
             # INITIALIZE & VALIDATE
-            client = set_CAVE_client(params['datastack'], ver=params['ver'])
+            client = set_CAVEclient(params['datastack'], ver=params['ver'])
             self.master.validate_method(
                 names=('caveclient version', 'datastack', 'materialization_version'),
                 method_values=(params['caveclient_version'], params['datastack'], params['ver']),
@@ -89,7 +89,7 @@ class ImportMethod(m65mat.ImportMethod):
             datastack = 'minnie65_phase3_v1'
 
             # INSERT
-            client = set_CAVE_client(datastack, ver)
+            client = set_CAVEclient(datastack, ver)
             cls.insert1({
                 'caveclient_version': cpvfd('caveclient'),
                 'datastack': datastack,
@@ -101,7 +101,7 @@ class ImportMethod(m65mat.ImportMethod):
             self.Log('info', f'Running {self.class_name} with params {params}.')
             
             # INITIALIZE & VALIDATE
-            client = set_CAVE_client(params['datastack'], ver=params['ver'])
+            client = set_CAVEclient(params['datastack'], ver=params['ver'])
             self.master.validate_method(
                 names=('caveclient version', 'datastack', 'materialization_version'),
                 method_values=(params['caveclient_version'], params['datastack'], params['ver']),
@@ -153,7 +153,7 @@ class ImportMethod(m65mat.ImportMethod):
             download_meshes_kwargs.setdefault('progress', False)
 
             # INSERT
-            client = set_CAVE_client(datastack, ver)
+            client = set_CAVEclient(datastack, ver)
             cls.insert1(
                 {
                     'description' : '',
@@ -176,7 +176,7 @@ class ImportMethod(m65mat.ImportMethod):
             self.Log('info', f'Running {self.class_name} with params {params}.')
 
             # INITIALIZE & VALIDATE
-            client = set_CAVE_client(params['datastack'], params['ver'])
+            client = set_CAVEclient(params['datastack'], params['ver'])
             packages = {
                 'meshparty_version': 'meshparty',
                 'caveclient_version': 'caveclient',
@@ -231,7 +231,7 @@ class ImportMethod(m65mat.ImportMethod):
             datastack = 'minnie65_phase3_v1'
 
             # INSERT
-            client = set_CAVE_client(datastack, ver)
+            client = set_CAVEclient(datastack, ver)
             cls.insert1({
                 'caveclient_version': cpvfd('caveclient'),
                 'datastack': datastack,
@@ -243,7 +243,7 @@ class ImportMethod(m65mat.ImportMethod):
             self.Log('info', f'Running {self.class_name} with params {params}.')
             
             # INITIALIZE & VALIDATE
-            client = set_CAVE_client(params['datastack'], ver=params['ver'])
+            client = set_CAVEclient(params['datastack'], ver=params['ver'])
             self.master.validate_method(
                 names=('caveclient version', 'datastack', 'materialization_version'),
                 method_values=(params['caveclient_version'], params['datastack'], params['ver']),
@@ -299,7 +299,7 @@ class ImportMethod(m65mat.ImportMethod):
             pcg_meshwork_params.setdefault('root_point_resolution', [4,4,40])
 
             # INSERT
-            client = set_CAVE_client(datastack, ver)
+            client = set_CAVEclient(datastack, ver)
             cls.insert1(
                 {
                     'meshparty_version': cpvfd('meshparty'),
@@ -324,7 +324,7 @@ class ImportMethod(m65mat.ImportMethod):
             self.Log('info', f'Running {self.class_name} with params {params}.')
 
             # INITIALIZE & VALIDATE
-            client = set_CAVE_client(params['datastack'], ver=params['ver'])
+            client = set_CAVEclient(params['datastack'], ver=params['ver'])
 
             # validate package dependencies
             packages = {
@@ -401,7 +401,7 @@ class ImportMethod(m65mat.ImportMethod):
             pcg_skel_params.setdefault('root_point_resolution', [4,4,40])
 
             # INSERT
-            client = set_CAVE_client(datastack, ver)
+            client = set_CAVEclient(datastack, ver)
             cls.insert1(
                 {
                     'meshparty_version': cpvfd('meshparty'),
@@ -427,7 +427,7 @@ class ImportMethod(m65mat.ImportMethod):
             self.Log('info', f'Running {self.class_name} with params {params}.')
 
             # INITIALIZE & VALIDATE
-            client = set_CAVE_client(params['datastack'], ver=params['ver'])
+            client = set_CAVEclient(params['datastack'], ver=params['ver'])
 
             # validate package dependencies
             packages = {
