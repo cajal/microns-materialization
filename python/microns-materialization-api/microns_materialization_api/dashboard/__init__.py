@@ -1,1 +1,1 @@
-from .apps import MatApp
+from .apps import SetMaterializationApp
