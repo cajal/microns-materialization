@@ -1,1 +1,1 @@
-from .apps import SetMaterializationApp
+from .apps import MaterializationManager

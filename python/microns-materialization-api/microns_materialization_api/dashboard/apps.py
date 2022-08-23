@@ -2,7 +2,7 @@ import wridgets.app as wra
 from ..schemas import \
     minnie65_materialization as m65mat
 
-class SetMaterializationApp(wra.App):
+class MaterializationManager(wra.App):
     store_config = [
         'value',
         'options'
