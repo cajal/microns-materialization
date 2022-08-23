@@ -5,18 +5,12 @@ from ..schemas import \
 class SetMaterializationApp(wra.App):
     store_config = [
         'value',
-        ('options', [
-            ('latest', m65mat.Materialization.latest.fetch(
-                'ver', order_by='ver DESC').tolist()),
-            ('stable', m65mat.Materialization.long_term_support.fetch(
-                'ver', order_by='ver DESC').tolist()),
-            ('all', m65mat.Materialization.CAVE.fetch(
-                'ver', order_by='ver DESC').tolist())
-        ])
+        'options'
     ]
 
-    def make(self, on_select=None, **kwargs):
+    def make(self, set_button=None, ver=None, on_select=None, **kwargs):
         self.propagate = True
+        self.options = self.materializations
 
         label_kws = dict(
             name='MatLabel',
@@ -45,11 +39,27 @@ class SetMaterializationApp(wra.App):
 
         self.core = wra.Label(**label_kws) + wra.SelectButtons(**buttons_kws) + \
             wra.Dropdown(**dropdown_kws) + wra.ToggleButton(**select_kws)
-        self.set_value()
+        
+        if set_button is not None:
+            self.children.MatButtons.set(label=set_button)
+        self.set_value(ver=ver)
 
     def update_dropdown_options(self):
         self.children.MatDropdown.set(
             options=self.children.MatButtons.get1('value'))
 
-    def set_value(self):
+    def set_value(self, ver=None):
+        if ver is not None:
+            self.children.MatDropdown.set(value=ver)
         self.value = self.children.MatDropdown.get1('value')
+
+    @property
+    def materializations(self):
+        return [
+            ('latest', m65mat.Materialization.latest.fetch(
+                'ver', order_by='ver DESC').tolist()),
+            ('stable', m65mat.Materialization.long_term_support.fetch(
+                'ver', order_by='ver DESC').tolist()),
+            ('all', m65mat.Materialization.CAVE.fetch(
+                'ver', order_by='ver DESC').tolist())
+        ]
