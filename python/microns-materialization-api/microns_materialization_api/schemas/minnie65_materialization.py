@@ -488,4 +488,4 @@ class Queue(djp.Lookup):
             cls.insert(rows, insert_to_master=True, ignore_extra_fields=True)
 
 schema.spawn_missing_classes()
-schema.connection.dependencies.load()
+
