@@ -4,13 +4,19 @@ DataJoint tables for importing minnie65 from CAVE.
 import datajoint as dj
 import datajoint_plus as djp
 from microns_utils.misc_utils import classproperty
-
+import microns_utils.datajoint_utils as dju
 from ..config import minnie65_materialization_config as config
 
 config.register_externals()
 config.register_adapters(context=locals())
 
 schema = djp.schema(config.schema_name, create_schema=True)
+
+
+@schema
+class Tag(dju.VersionLookup):
+    package = 'microns-materialization-api'
+    attr_name = 'tag'
 
 
 @schema
@@ -108,6 +114,20 @@ class ImportMethod(djp.Lookup):
         ts_inserted=CURRENT_TIMESTAMP : timestamp
         """
 
+    class Synapse3(djp.Part):
+        enable_hashing = True
+        hash_name = 'import_method'
+        hashed_attrs = 'caveclient_version', 'datastack', 'ver', Tag.attr_name
+        definition = """
+        -> master
+        ---
+        caveclient_version: varchar(48) # version of caveclient installed when method was created
+        datastack: varchar(250) # name of datastack
+        ver: smallint # client materialization version
+        -> Tag
+        ts_inserted=CURRENT_TIMESTAMP : timestamp
+        """
+
     class PCGMeshwork(djp.Part):
         enable_hashing = True
         hash_name = 'import_method'
@@ -150,6 +170,26 @@ class ImportMethod(djp.Lookup):
         target_dir: varchar(1000) # target directory for file
         ts_inserted=CURRENT_TIMESTAMP : timestamp
         """
+
+@schema
+class MakeMethod(djp.Lookup):
+    hash_name = 'make_method'
+    definition = f"""
+    {hash_name}: varchar(6)
+    """
+
+    class MeshworkAxonDendriteSkeleton(djp.Part):
+        enable_hashing = True
+        hash_name = 'make_method'
+        hashed_attrs = 'pcg_skel_version', Tag.attr_name
+        definition = """
+        -> master
+        ---
+        pcg_skel_version: varchar(48) # version of pcg_skel installed when method was created
+        target_dir: varchar(1000) # target directory for file
+        -> Tag
+        """
+
 
 
 @schema
@@ -320,6 +360,21 @@ class Synapse(djp.Lookup):
         synapse_z                                     : int unsigned                 # z coordinate of centroid in EM voxels (x: 4nm, y: 4nm, z: 40nm). From Allen 'ctr_pt_position'.
         synapse_size                                  : int unsigned                 # (EM voxels) scaled by (4x4x40)
         """
+
+    class Info2(djp.Part):
+        definition = """
+        # Synapses from the table 'synapses_pni_2'
+        -> Materialization
+        -> Segment.proj(primary_seg_id='segment_id')
+        secondary_seg_id                              : bigint unsigned              # id of the segment that is synaptically paired to primary_segment_id.
+        -> master
+        ---
+        prepost                                       : varchar(16)                  # whether the primary_seg_id is "presyn" or "postsyn"
+        synapse_x                                     : int unsigned                 # x coordinate of synapse centroid in EM voxels (x: 4nm, y: 4nm, z: 40nm). From Allen 'ctr_pt_position'.
+        synapse_y                                     : int unsigned                 # y coordinate of centroid in EM voxels (x: 4nm, y: 4nm, z: 40nm). From Allen 'ctr_pt_position'.
+        synapse_z                                     : int unsigned                 # z coordinate of centroid in EM voxels (x: 4nm, y: 4nm, z: 40nm). From Allen 'ctr_pt_position'.
+        synapse_size                                  : int unsigned                 # (EM voxels) scaled by (4x4x40)
+        """
     
     class MatV1(djp.Part):
         definition = """
@@ -341,6 +396,14 @@ class Synapse(djp.Lookup):
     class CAVE(djp.Part, dj.Computed):
         definition = """
         -> master.Info
+        -> ImportMethod
+        ---
+        ts_inserted=CURRENT_TIMESTAMP : timestamp # timestamp inserted
+        """
+
+    class CAVE2(djp.Part, dj.Computed):
+        definition = """
+        -> master.Info2
         -> ImportMethod
         ---
         ts_inserted=CURRENT_TIMESTAMP : timestamp # timestamp inserted
@@ -442,6 +505,40 @@ class Skeleton(djp.Lookup):
         -> Segment
         -> ImportMethod
         ts_computed : varchar(128) # timestamp (varchar) that row was downloaded/ computed
+        ---
+        ts_inserted=CURRENT_TIMESTAMP : timestamp
+        """
+
+    class MeshworkAxonDendriteSkeletonError(djp.Part):
+        error_code = '000001'
+        hash_name = 'skeleton_id'
+        definition = """
+        -> master
+        -> Meshwork
+        -> MakeMethod
+        ---
+        error_msg : varchar(1000) # error message
+        ts_inserted=CURRENT_TIMESTAMP : timestamp
+        """
+
+    class MeshworkAxonDendriteSkeleton(djp.Part):
+        hash_name = 'skeleton_id'
+        definition = """
+        -> master
+        ---
+        axon_skeleton : <minnie65_meshwork_axon_dendrite_skeletons> # path to the .npz file
+        dendrite_skeleton : <minnie65_meshwork_axon_dendrite_skeletons> # path to the .npz file
+        split_score : float # score from pcg_skel.meshwork.algorithms.split_axon_by_synapses
+        """
+
+    class MeshworkAxonDendriteSkeletonMaker(djp.Part, dj.Computed):
+        enable_hashing = True
+        hash_name = 'skeleton_make_id'
+        hashed_attrs = Meshwork.primary_key + MakeMethod.primary_key
+        definition = f"""
+        -> master.proj({hash_name}="skeleton_id")
+        -> Meshwork
+        -> MakeMethod
         ---
         ts_inserted=CURRENT_TIMESTAMP : timestamp
         """

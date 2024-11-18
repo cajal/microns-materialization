@@ -12,6 +12,9 @@ import pcg_skel
 from meshparty import trimesh_io
 
 # Schema creation
+from microns_materialization_api.utils.skeleton_utils import \
+    convert_skeleton_to_nodes_edges
+
 from microns_materialization_api.schemas import \
     minnie65_materialization as m65mat
 
@@ -30,6 +33,15 @@ from microns_utils.version_utils import \
     check_package_version_from_distributions as cpvfd
 
 # TODO: Deal with filter out unrestricted
+
+import os
+cvt = os.getenv('CLOUDVOLUME_TOKEN')
+assert cvt is not None, 'No cloudvolume token found'
+
+
+class Tag(m65mat.Tag):
+    pass
+
 
 class ImportMethod(m65mat.ImportMethod):
     @classmethod
@@ -56,7 +68,7 @@ class ImportMethod(m65mat.ImportMethod):
             datastack = 'minnie65_phase3_v1'
             
             # INSERT
-            client = set_CAVEclient(datastack, ver)
+            client = set_CAVEclient(datastack, ver, caveclient_kws={'auth_token': cvt})
             cls.insert1({
                 'caveclient_version': cpvfd('caveclient'),
                 'datastack': datastack,
@@ -68,7 +80,7 @@ class ImportMethod(m65mat.ImportMethod):
             self.Log('info', f'Running {self.class_name} with params {params}.')
 
             # INITIALIZE & VALIDATE
-            client = set_CAVEclient(params['datastack'], ver=params['ver'])
+            client = set_CAVEclient(params['datastack'], ver=params['ver'], caveclient_kws={'auth_token': cvt})
             self.master.validate_method(
                 names=('caveclient version', 'datastack', 'materialization_version'),
                 method_values=(params['caveclient_version'], params['datastack'], params['ver']),
@@ -89,7 +101,7 @@ class ImportMethod(m65mat.ImportMethod):
             datastack = 'minnie65_phase3_v1'
 
             # INSERT
-            client = set_CAVEclient(datastack, ver)
+            client = set_CAVEclient(datastack, ver, caveclient_kws={'auth_token': cvt})
             cls.insert1({
                 'caveclient_version': cpvfd('caveclient'),
                 'datastack': datastack,
@@ -101,7 +113,7 @@ class ImportMethod(m65mat.ImportMethod):
             self.Log('info', f'Running {self.class_name} with params {params}.')
             
             # INITIALIZE & VALIDATE
-            client = set_CAVEclient(params['datastack'], ver=params['ver'])
+            client = set_CAVEclient(params['datastack'], ver=params['ver'], caveclient_kws={'auth_token': cvt})
             self.master.validate_method(
                 names=('caveclient version', 'datastack', 'materialization_version'),
                 method_values=(params['caveclient_version'], params['datastack'], params['ver']),
@@ -153,7 +165,7 @@ class ImportMethod(m65mat.ImportMethod):
             download_meshes_kwargs.setdefault('progress', False)
 
             # INSERT
-            client = set_CAVEclient(datastack, ver)
+            client = set_CAVEclient(datastack, ver, caveclient_kws={'auth_token': cvt})
             cls.insert1(
                 {
                     'description' : '',
@@ -176,7 +188,7 @@ class ImportMethod(m65mat.ImportMethod):
             self.Log('info', f'Running {self.class_name} with params {params}.')
 
             # INITIALIZE & VALIDATE
-            client = set_CAVEclient(params['datastack'], params['ver'])
+            client = set_CAVEclient(params['datastack'], params['ver'], caveclient_kws={'auth_token': cvt})
             packages = {
                 'meshparty_version': 'meshparty',
                 'caveclient_version': 'caveclient',
@@ -213,29 +225,38 @@ class ImportMethod(m65mat.ImportMethod):
     class Synapse(m65mat.ImportMethod.Synapse):
         @classmethod
         def update_method(cls, *args, **kwargs):
-            msg = f'{cls.class_name} has been deprecated. Use {cls.master.class_name}.Synapse2.'
+            msg = f'{cls.class_name} has been deprecated. Use {cls.master.class_name}.Synapse3.'
             cls.Log('error', msg)
             raise Exception(msg)
 
         def run(self, *args, **kwargs):
-            msg = f'{self.class_name} has been deprecated. Use {self.master.class_name}.Synapse2.'
+            msg = f'{self.class_name} has been deprecated. Use {self.master.class_name}.Synapse3.'
             self.Log('error', msg)
             raise Exception(msg)
     
     class Synapse2(m65mat.ImportMethod.Synapse2):
         @classmethod
-        def update_method(cls, ver=None, **kwargs):
+        def update_method(cls, *args, **kwargs):
+            msg = f'{cls.class_name} has been deprecated. Use {cls.master.class_name}.Synapse3.'
+            cls.Log('error', msg)
+            raise Exception(msg)
+
+        def run(self, *args, **kwargs):
+            msg = f'{self.class_name} has been deprecated. Use {self.master.class_name}.Synapse3.'
+            self.Log('error', msg)
+            raise Exception(msg)
+
+    class Synapse3(m65mat.ImportMethod.Synapse3):
+        @classmethod
+        def update_method(cls, ver=None, datastack='minnie65_phase3_v1', **kwargs):
             cls.Log('info', f'Updating method for {cls.class_name}.')
-
-            # DEFAULTS            
-            datastack = 'minnie65_phase3_v1'
-
             # INSERT
-            client = set_CAVEclient(datastack, ver)
+            client = set_CAVEclient(datastack, ver, caveclient_kws={'auth_token': cvt})
             cls.insert1({
                 'caveclient_version': cpvfd('caveclient'),
                 'datastack': datastack,
                 'ver': ver if ver is not None else client.materialize.version,
+                Tag.attr_name: Tag.version,
             }, ignore_extra_fields=True, skip_duplicates=True, insert_to_master=True)
 
         def run(self, **kwargs):
@@ -243,11 +264,11 @@ class ImportMethod(m65mat.ImportMethod):
             self.Log('info', f'Running {self.class_name} with params {params}.')
             
             # INITIALIZE & VALIDATE
-            client = set_CAVEclient(params['datastack'], ver=params['ver'])
+            client = set_CAVEclient(params['datastack'], ver=params['ver'], caveclient_kws={'auth_token': cvt})
             self.master.validate_method(
-                names=('caveclient version', 'datastack', 'materialization_version'),
-                method_values=(params['caveclient_version'], params['datastack'], params['ver']),
-                current_values=(cpvfd('caveclient'), client.materialize.datastack_name, client.materialize.version)
+                names=('caveclient version', 'datastack', 'materialization_version', Tag.attr_name),
+                method_values=(params['caveclient_version'], params['datastack'], params['ver'], params[Tag.attr_name]),
+                current_values=(cpvfd('caveclient'), client.materialize.datastack_name, client.materialize.version, Tag.version)
             )
 
             # IMPORT DATA
@@ -257,18 +278,34 @@ class ImportMethod(m65mat.ImportMethod):
             df_pre = client.materialize.query_table('synapses_pni_2', filter_equal_dict={'pre_pt_root_id': primary_seg_id})
             df_pre = df_pre.rename(columns={'pre_pt_root_id':'primary_seg_id', 'post_pt_root_id': 'secondary_seg_id'})
             df_pre['prepost'] = 'presyn'
+            df_pre.attrs = {} # needed because the attrs in the returned dataframe break pd.concat
             
+            # # flip primary to secondary and presyn to postsyn
+            # df_pre_as_post = df_pre.copy()
+            # df_pre_as_post = df_pre_as_post.rename(columns={'primary_seg_id': 'secondary_seg_id', 'secondary_seg_id': 'primary_seg_id'})
+            # df_pre_as_post['prepost'] = 'postsyn'
+
             # get synapses where primary segment is postsynaptic
             df_post = client.materialize.query_table('synapses_pni_2', filter_equal_dict={'post_pt_root_id': primary_seg_id})
             df_post = df_post.rename(columns={'post_pt_root_id':'primary_seg_id', 'pre_pt_root_id': 'secondary_seg_id'})
             df_post['prepost'] = 'postsyn'
-            
+
+            # # flip primary to secondary and postsyn to presyn
+            # df_post_as_pre = df_post.copy()
+            # df_post_as_pre = df_post_as_pre.rename(columns={'primary_seg_id': 'secondary_seg_id', 'secondary_seg_id': 'primary_seg_id'})
+            # df_post_as_pre['prepost'] = 'presyn'
+
             # combine dataframes
             df = pd.concat([df_pre, df_post], axis=0)
+            # df = pd.concat([df_pre, df_pre_as_post, df_post, df_post_as_pre], axis=0)
             
             # remove autapses (these are mostly errors)
             df = df[df['primary_seg_id']!=df['secondary_seg_id']]
             
+            # ensure primary_seg_id is in Segment table
+            # seg_df = pd.DataFrame(m65mat.Segment.proj(primary_seg_id='segment_id').fetch())
+            # df = df.merge(seg_df)
+
             if len(df)>0:
                 # add synapse_xyz
                 df['synapse_x'], df['synapse_y'], df['synapse_z'] = np.stack(df['ctr_pt_position'].T, -1)
@@ -280,7 +317,7 @@ class ImportMethod(m65mat.ImportMethod):
                                                         'prepost', 'synapse_x', 'synapse_y', 'synapse_z', 'synapse_size']]
                 
                 df['import_method'] = params['import_method']
-                
+                df['ver'] = params['ver']
                 return {'df': df}
             else:
                 return {'df': []}
@@ -299,7 +336,7 @@ class ImportMethod(m65mat.ImportMethod):
             pcg_meshwork_params.setdefault('root_point_resolution', [4,4,40])
 
             # INSERT
-            client = set_CAVEclient(datastack, ver)
+            client = set_CAVEclient(datastack, ver, caveclient_kws={'auth_token': cvt})
             cls.insert1(
                 {
                     'meshparty_version': cpvfd('meshparty'),
@@ -324,7 +361,7 @@ class ImportMethod(m65mat.ImportMethod):
             self.Log('info', f'Running {self.class_name} with params {params}.')
 
             # INITIALIZE & VALIDATE
-            client = set_CAVEclient(params['datastack'], ver=params['ver'])
+            client = set_CAVEclient(params['datastack'], ver=params['ver'], caveclient_kws={'auth_token': cvt})
 
             # validate package dependencies
             packages = {
@@ -401,7 +438,7 @@ class ImportMethod(m65mat.ImportMethod):
             pcg_skel_params.setdefault('root_point_resolution', [4,4,40])
 
             # INSERT
-            client = set_CAVEclient(datastack, ver)
+            client = set_CAVEclient(datastack, ver, caveclient_kws={'auth_token': cvt})
             cls.insert1(
                 {
                     'meshparty_version': cpvfd('meshparty'),
@@ -427,7 +464,7 @@ class ImportMethod(m65mat.ImportMethod):
             self.Log('info', f'Running {self.class_name} with params {params}.')
 
             # INITIALIZE & VALIDATE
-            client = set_CAVEclient(params['datastack'], ver=params['ver'])
+            client = set_CAVEclient(params['datastack'], ver=params['ver'], caveclient_kws={'auth_token': cvt})
 
             # validate package dependencies
             packages = {
@@ -481,6 +518,55 @@ class ImportMethod(m65mat.ImportMethod):
                 'skeleton_obj': filepath, 
                 'ts_computed': ts_computed
             }
+
+
+class MakeMethod(m65mat.MakeMethod):
+    @classmethod
+    def run(cls, key):
+        return cls.r1p(key).run(**key)
+    
+    class MeshworkAxonDendriteSkeleton(m65mat.MakeMethod.MeshworkAxonDendriteSkeleton):
+        @classmethod
+        def update_method(cls):
+            cls.insert1({Tag.attr_name: Tag.version,
+                         'pcg_skel_version': cpvfd('pcg-skel'),
+                         'target_dir': config.externals['minnie65_meshwork_axon_dendrite_skeletons']['location'],
+            }, insert_to_master=True)
+
+        def run(self, meshwork_id, **kwargs):
+            params = (self & kwargs).fetch1()
+            target_dir = params.get('target_dir')
+            assert params.get('tag') == Tag.version, 'Tag version mismatch'
+            assert params.get('pcg_skel_version') == cpvfd('pcg-skel'), 'pcg-skel version mismatch'
+
+            meshwork_obj = (m65mat.Meshwork.PCGMeshwork & {'meshwork_id': meshwork_id}).fetch1('meshwork_obj')
+
+            is_axon, score = pcg_skel.meshwork.algorithms.split_axon_by_synapses(meshwork_obj, meshwork_obj.anno.pre_syn.mesh_index, meshwork_obj.anno.post_syn.mesh_index)
+            # This does ignore any edges with a vertex in the axon and another vertex in the dendrites indices
+            axon_index_set = set(is_axon.to_skel_index.tolist())
+            axon_edges = np.array([row for row in meshwork_obj.skeleton.edges if (row[0] in axon_index_set) and (row[1] in axon_index_set)])
+            dendrite_edges = np.array([row for row in meshwork_obj.skeleton.edges if (row[0] not in axon_index_set) and (row[1] not in axon_index_set)])
+            
+            axon_skeleton = meshwork_obj.skeleton.vertices[axon_edges]
+            dendrite_skeleton = meshwork_obj.skeleton.vertices[dendrite_edges]
+
+            axon_vertices, axon_edges = convert_skeleton_to_nodes_edges(axon_skeleton)
+            dendrite_vertices, dendrite_edges = convert_skeleton_to_nodes_edges(dendrite_skeleton)
+
+            axon_skeleton_fp = Path(target_dir).joinpath(f'{meshwork_id}_axon_skeleton.npz')
+            dendrite_skeleton_fp = Path(target_dir).joinpath(f'{meshwork_id}_dendrite_skeleton.npz')
+
+            np.savez(axon_skeleton_fp, vertices=axon_vertices, edges=axon_edges)
+            np.savez(dendrite_skeleton_fp, vertices=dendrite_vertices, edges=dendrite_edges)
+
+            return {
+                'meshwork_id': meshwork_id,
+                'make_method': params['make_method'],
+                'axon_skeleton': axon_skeleton_fp,
+                'dendrite_skeleton': dendrite_skeleton_fp,
+                'split_score': score
+            }
+
 
 class Materialization(m65mat.Materialization):
     
@@ -581,6 +667,8 @@ class Synapse(m65mat.Synapse):
 
     class Info(m65mat.Synapse.Info): pass
     
+    class Info2(m65mat.Synapse.Info2): pass
+
     class MatV1(m65mat.Synapse.MatV1):
         @classmethod
         def fill(cls):
@@ -595,13 +683,27 @@ class Synapse(m65mat.Synapse):
     class CAVE(m65mat.Synapse.CAVE):
         @property
         def key_source(self):
-            return (Segment.proj(primary_seg_id='segment_id') - Synapse.Info - Synapse.SegmentExclude) * ImportMethod.Synapse2
+            return dj.U('primary_seg_id', 'import_method') & ((Segment.Nucleus.proj(primary_seg_id='segment_id') - Synapse.Info - Synapse.SegmentExclude) * ImportMethod.Synapse2)
 
         def make(self, key):
             df = ImportMethod.run(key)['df']
             if len(df) > 0:
                 self.master.insert(df, ignore_extra_fields=True, skip_duplicates=True)
                 self.master.Info.insert(df, ignore_extra_fields=True, skip_duplicates=True)
+                self.insert(df, ignore_extra_fields=True)
+            else:
+                self.master.SegmentExclude.insert1({'primary_seg_id': key['primary_seg_id'], 'synapse_id': 0, Exclusion.hash_name: Exclusion.hash1({'reason': 'no synapse data'})}, skip_duplicates=True)
+
+    class CAVE2(m65mat.Synapse.CAVE2):
+        @property
+        def key_source(self):
+            return dj.U('ver', 'primary_seg_id', 'import_method') &  ((Segment.Nucleus.proj(primary_seg_id='segment_id') - Synapse.SegmentExclude) * ImportMethod.Synapse3)
+
+        def make(self, key):
+            df = ImportMethod.run(key)['df']
+            if len(df) > 0:
+                self.master.insert(df, ignore_extra_fields=True, skip_duplicates=True)
+                self.master.Info2.insert(df, ignore_extra_fields=True, skip_duplicates=True)
                 self.insert(df, ignore_extra_fields=True)
             else:
                 self.master.SegmentExclude.insert1({'primary_seg_id': key['primary_seg_id'], 'synapse_id': 0, Exclusion.hash_name: Exclusion.hash1({'reason': 'no synapse data'})}, skip_duplicates=True)
@@ -662,6 +764,44 @@ class Skeleton(m65mat.Skeleton):
             self.master.PCGSkeleton.insert1(result, ignore_extra_fields=True, skip_duplicates=True)
             self.insert1(result, insert_to_master=True, skip_hashing=True, ignore_extra_fields=True, skip_duplicates=True, insert_to_master_kws={'ignore_extra_fields': True, 'skip_duplicates': True})
 
+    class MeshworkAxonDendriteSkeletonError(m65mat.Skeleton.MeshworkAxonDendriteSkeletonError):
+        pass
+
+    class MeshworkAxonDendriteSkeleton(m65mat.Skeleton.MeshworkAxonDendriteSkeleton):
+        pass
+
+    class MeshworkAxonDendriteSkeletonMaker(m65mat.Skeleton.MeshworkAxonDendriteSkeletonMaker):
+        @property
+        def key_source(self):
+            return Meshwork * (MakeMethod & MakeMethod.MeshworkAxonDendriteSkeleton) - self.master.MeshworkAxonDendriteSkeletonError
+        
+        def make(self, key):
+            try:
+                result = MakeMethod.run(key)
+                result_hash = self.hash1(result)
+                result[self.master.hash_name] = result_hash
+                result[self.hash_name] = result_hash
+                self.master.MeshworkAxonDendriteSkeleton.insert1(result, ignore_extra_fields=True, insert_to_master=True)
+                self.insert1(result, ignore_extra_fields=True, skip_hashing=True)
+
+            except Exception as e:
+                error_table = self.master.MeshworkAxonDendriteSkeletonError
+                self.Log('error', f'errored on key {key}')
+                key.update({
+                    self.master.hash_name: error_table.error_code,
+                    'error_msg': e
+                })
+                error_table.insert1(
+                    key, 
+                    insert_to_master=True, 
+                    skip_duplicates=True,
+                    insert_to_master_kws = {
+                        'skip_duplicates': True, 
+                        'ignore_extra_fields': True
+                    }
+                ) 
+
+
 
 class Queue(m65mat.Queue):
 
@@ -712,6 +852,7 @@ def download_materialization(ver=None, download_synapses=False, download_meshes=
     methods = [
         ImportMethod.MaterializationVer,
         ImportMethod.NucleusSegment,
+        ImportMethod.NucleusSegment,
     ]
 
     makers = [
@@ -728,14 +869,12 @@ def download_materialization(ver=None, download_synapses=False, download_meshes=
         methods += [ImportMethod.MeshPartyMesh2]
         makers += [Mesh.MeshParty]
 
-    for m in methods:
-        logger.info(f'Updating methods for {m.class_name}.')
+    for m, mk in zip(methods, makers):
+        logger.info(f'Updating method for {m.class_name}.')
         m.update_method(ver=ver)
-
-    for mk in makers:
         logger.info(f'Populating {mk.class_name}.')
-        mk.populate(m.master & m.get_latest_entries(), reserve_jobs=True, order='random', suppress_errors=True)
-
+        mk.populate(m.master & m.get_latest_entries(), reserve_jobs=True, order='random', suppress_errors=True)        
+        
 
 def download_meshwork_objects(restriction={}, loglevel=None, update_root_level=True):
     """
