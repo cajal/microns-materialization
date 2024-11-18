@@ -7,7 +7,7 @@ import json
 import h5py
 import trimesh
 from meshparty import meshwork, skeleton
-from microns_utils.adapter_utils import FilePathAdapter, adapt_mesh_hdf5
+from microns_utils.adapter_utils import FilePathAdapter, NumpyAdapter, adapt_mesh_hdf5
 
 
 class TrimeshAdapter(FilePathAdapter):
@@ -39,11 +39,13 @@ class PCGSkelAdapter(FilePathAdapter):
 minnie65_meshes = TrimeshAdapter('filepath@minnie65_meshes')
 minnie65_meshwork = MeshworkAdapter('filepath@minnie65_meshwork')
 minnie65_pcg_skeletons = PCGSkelAdapter('filepath@minnie65_pcg_skeletons')
+minnie65_meshwork_axon_dendrite_skeletons = NumpyAdapter('filepath@minnie65_meshwork_axon_dendrite_skeletons')
 
 minnie65_materialization = {
     'minnie65_meshes': minnie65_meshes,
     'minnie65_meshwork': minnie65_meshwork,
-    'minnie65_pcg_skeletons': minnie65_pcg_skeletons
+    'minnie65_pcg_skeletons': minnie65_pcg_skeletons,
+    'minnie65_meshwork_axon_dendrite_skeletons': minnie65_meshwork_axon_dendrite_skeletons,
 }
 
 # H01
